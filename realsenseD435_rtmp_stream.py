@@ -13,6 +13,8 @@ from gi.repository import GObject, Gst
 
 Gst.init(None)
 
+key = open("./.key").read()
+
 # Control parameters
 # =======================
 json_file = "MidResHighDensityPreset.json" # MidResHighDensityPreset.json / custom / MidResHighAccuracyPreset
@@ -123,10 +125,9 @@ if __name__ == "__main__":
 
         print("Intel Realsense D435 started successfully.")
         print("")
-        TWITCH_KEY = os.getenv("TWITCH_KEY")
 
-        RTMP_SERVER = "rtmp://live.twitch.tv/app/" + TWITCH_KEY
-        CLI='appsrc name=mysource format=TIME do-timestamp=TRUE is-live=TRUE caps="video/x-raw,format=BGR,width=1280,height=480,framerate=(fraction)30/1,pixel-aspect-ratio=(fraction)1/1" ! videoconvert ! queue max-size-buffers=4 ! omxh264enc ! h264parse ! flvmux ! rtmpsink location="'+ RTMP_SERVER +'" sync=false'
+        RTMP_SERVER = "rtmp://live.twitch.tv/app/" + key
+        CLI='appsrc name=mysource format=TIME do-timestamp=TRUE is-live=TRUE caps="video/x-raw,format=BGR,width=720,height=1280,framerate=(fraction)30/1,pixel-aspect-ratio=(fraction)1/1" ! videoconvert ! queue max-size-buffers=4 ! omxh264enc ! h264parse ! flvmux ! rtmpsink location="'+ RTMP_SERVER +'" sync=false'
 
         pipe=Gst.parse_launch(CLI)
 
@@ -204,8 +205,8 @@ if __name__ == "__main__":
             # bg_removed = np.where((depth_image_3d > clipping_distance) | (depth_image_3d <= 0), grey_color, color_image)
 
             # Stack rgb and depth map images horizontally for visualisation only
-            images = np.hstack((color_image, depth_color_image))
-
+            images = np.vstack((color_image, depth_color_image))
+            images = cv2.resize(images, (720, 1280), interpolation = cv2.INTER_AREA)
             # Show horizontally stacked rgb and depth map images
             cv2.namedWindow('RGB and Depth Map Images')
             cv2.imshow('RGB and Depth Map Images', images)
@@ -241,7 +242,7 @@ if __name__ == "__main__":
 
                 filename_raw = str(img_counter) + '.raw'
                 # save the rgb colour image
-                cv2.imwrite(os.path.join(rgb_img_path, filename), color_image)
+                cv2.imwrite(os.path.join(rgb_img_path, filename), images)
                 # Save the depth image in raw binary format uint16.
                 f = open(os.path.join(depth_img_path, filename_raw), mode='wb')
                 depth_image.tofile(f)
