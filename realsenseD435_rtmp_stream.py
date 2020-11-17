@@ -6,7 +6,7 @@ import cv2
 import os
 import json
 import time
-
+import platform
 import gi
 gi.require_version('Gst', '1.0')
 from gi.repository import GObject, Gst
@@ -126,8 +126,14 @@ if __name__ == "__main__":
         print("Intel Realsense D435 started successfully.")
         print("")
 
-        RTMP_SERVER = "rtmp://live.twitch.tv/app/" + key
-        CLI='appsrc name=mysource format=TIME do-timestamp=TRUE is-live=TRUE caps="video/x-raw,format=BGR,width=720,height=1280,framerate=(fraction)30/1,pixel-aspect-ratio=(fraction)1/1" ! videoconvert ! queue max-size-buffers=4 ! omxh264enc ! h264parse ! flvmux ! rtmpsink location="'+ RTMP_SERVER +'" sync=false'
+        #RTMP_SERVER = "rtmp://live.twitch.tv/app/" + key
+        RTMP_SERVER = key
+
+        encoder = "omxh264enc"
+        if platform.system() == "Darwin":
+            encoder = "vtenc_h264"
+        
+        CLI='appsrc name=mysource format=TIME do-timestamp=TRUE is-live=TRUE caps="video/x-raw,format=BGR,width=720,height=1280,framerate=(fraction)30/1,pixel-aspect-ratio=(fraction)1/1" ! videoconvert ! queue max-size-buffers=4 ! '+ encoder +'  ! h264parse ! flvmux ! rtmpsink location="'+ RTMP_SERVER +'" sync=false'
 
         pipe=Gst.parse_launch(CLI)
 
