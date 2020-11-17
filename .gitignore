@@ -1,2 +1,4 @@
 *.so
 captured_images
+
+.DS_Store
