@@ -1,6 +1,6 @@
 #!python3
 
-import pyrealsense2 as rs
+import pyrealsense2.pyrealsense2 as rs
 import numpy as np
 import cv2
 import os
@@ -13,11 +13,13 @@ from gi.repository import GObject, Gst
 
 Gst.init(None)
 
-key = open("./.key").read()
+dir_path = os.path.dirname(os.path.realpath(__file__))
+
+key = open(dir_path + "/.key").read()
 
 # Control parameters
 # =======================
-json_file = "MidResHighDensityPreset.json" # MidResHighDensityPreset.json / custom / MidResHighAccuracyPreset
+json_file = dir_path + "/" + "MidResHighDensityPreset.json" # MidResHighDensityPreset.json / custom / MidResHighAccuracyPreset
 clipping_distance_in_meters = 1.5  # 1.5 meters
 # ======================
 
@@ -214,8 +216,7 @@ if __name__ == "__main__":
             images = np.vstack((color_image, depth_color_image))
             images = cv2.resize(images, (720, 1280), interpolation = cv2.INTER_AREA)
             # Show horizontally stacked rgb and depth map images
-            cv2.namedWindow('RGB and Depth Map Images')
-            cv2.imshow('RGB and Depth Map Images', images)
+
 
             
             # sent = out_send.write(depth_color_image)
@@ -225,6 +226,10 @@ if __name__ == "__main__":
             buf = Gst.Buffer.new_allocate(None, len(frame), None)
             buf.fill(0,frame)
             appsrc.emit("push-buffer", buf)
+
+            cv2.namedWindow('RGB and Depth Map Images')
+            images = cv2.resize(images, (180, 320), interpolation = cv2.INTER_AREA)
+            cv2.imshow('RGB and Depth Map Images', images)
             c = cv2.waitKey(1)
 
             # =============================================
