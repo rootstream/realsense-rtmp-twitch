@@ -1,6 +1,6 @@
 #!python3
 
-import pyrealsense2.pyrealsense2 as rs
+import pyrealsense2 as rs
 import numpy as np
 import cv2
 import os
@@ -135,8 +135,9 @@ if __name__ == "__main__":
         if platform.system() == "Darwin":
             encoder = "vtenc_h264"
         
-        CLI='appsrc name=mysource format=TIME do-timestamp=TRUE is-live=TRUE caps="video/x-raw,format=BGR,width=720,height=1280,framerate=(fraction)30/1,pixel-aspect-ratio=(fraction)1/1" ! videoconvert ! queue max-size-buffers=4 ! '+ encoder +'  ! h264parse ! flvmux ! rtmpsink location="'+ RTMP_SERVER +'" sync=false'
+        CLI='appsrc name=mysource format=TIME do-timestamp=TRUE is-live=TRUE caps="video/x-raw,format=BGR,width=640,height=960,framerate=(fraction)30/1,pixel-aspect-ratio=(fraction)1/1" ! videoconvert ! queue max-size-buffers=4 ! '+ encoder +' ! h264parse ! flvmux ! rtmpsink location="'+ RTMP_SERVER +'" sync=false'
 
+        print( CLI )
         pipe=Gst.parse_launch(CLI)
 
         appsrc=pipe.get_by_name("mysource")
@@ -214,7 +215,7 @@ if __name__ == "__main__":
 
             # Stack rgb and depth map images horizontally for visualisation only
             images = np.vstack((color_image, depth_color_image))
-            images = cv2.resize(images, (720, 1280), interpolation = cv2.INTER_AREA)
+            #images = cv2.resize(images, (720, 1280), interpolation = cv2.INTER_AREA)
             # Show horizontally stacked rgb and depth map images
 
 
@@ -228,7 +229,7 @@ if __name__ == "__main__":
             appsrc.emit("push-buffer", buf)
 
             cv2.namedWindow('RGB and Depth Map Images')
-            images = cv2.resize(images, (180, 320), interpolation = cv2.INTER_AREA)
+            images = cv2.resize(images, (320, 480), interpolation = cv2.INTER_AREA)
             cv2.imshow('RGB and Depth Map Images', images)
             c = cv2.waitKey(1)
 
