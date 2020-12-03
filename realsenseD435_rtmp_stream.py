@@ -91,7 +91,7 @@ if __name__ == "__main__":
     # ======================
     # 2. Start the streaming
     # ======================
-    print("Starting up the Intel Realsense D435...")
+    print("Starting up the Intel Realsense...")
     print("")
     profile = pipeline.start(config)
 
@@ -112,7 +112,7 @@ if __name__ == "__main__":
     # 4. Create an align object.
     #    Align the depth image to the rgb image.
     # ==========================================
-    align_to = rs.stream.color
+    align_to = rs.stream.depth
     align = rs.align(align_to)
 
     try:
@@ -125,31 +125,24 @@ if __name__ == "__main__":
             # Align the depth frame to color frame
             aligned_frames = align.process(frames)
 
-        print("Intel Realsense D435 started successfully.")
+        print("Intel Realsense started successfully.")
         print("")
 
-        #RTMP_SERVER = "rtmp://live.twitch.tv/app/" + key
+        # ===========================================
+        # Setup gstreamer
+        # ===========================================
         RTMP_SERVER = key
-
         encoder = "omxh264enc"
         if platform.system() == "Darwin":
             encoder = "vtenc_h264"
         
         CLI='appsrc name=mysource format=TIME do-timestamp=TRUE is-live=TRUE caps="video/x-raw,format=BGR,width=640,height=960,framerate=(fraction)30/1,pixel-aspect-ratio=(fraction)1/1" ! videoconvert ! queue max-size-buffers=4 ! '+ encoder +' ! h264parse ! flvmux ! rtmpsink location="'+ RTMP_SERVER +'" sync=false'
-
         print( CLI )
         pipe=Gst.parse_launch(CLI)
-
         appsrc=pipe.get_by_name("mysource")
         #appsink=pipline.get_by_name("sink")
         appsrc.set_property('emit-signals',True) #tell sink to emit signals
-
         pipe.set_state(Gst.State.PLAYING)
-
-        colorizer = rs.colorizer()
-        colorizer.set_option(rs.option.color_scheme, 0)
-        colorizer.set_option(rs.option.visual_preset, 1)
-     
 
         while True:
             # ======================================
@@ -172,7 +165,7 @@ if __name__ == "__main__":
 
             # print the camera intrinsics just once. it is always the same
             if intrinsics:
-                print("Intel Realsense D435 Camera Intrinsics: ")
+                print("Intel Realsense Camera Intrinsics: ")
                 print("========================================")
                 print(depth_frame.profile.as_video_stream_profile().intrinsics)
                 print(color_frame.profile.as_video_stream_profile().intrinsics)
@@ -187,16 +180,10 @@ if __name__ == "__main__":
             # Apply hole filling filter
             # depth_frame = hole_filling(depth_frame)
 
-            # ===========================
-            # 10. colourise the depth map
-            # ===========================
-            depth_color_frame = colorizer.colorize(depth_frame)
-
             # ==================================
             # 11. Convert images to numpy arrays
             # ==================================
             depth_image = np.asanyarray(depth_frame.get_data())
-            depth_color_image = np.asanyarray(depth_color_frame.get_data())
             color_image = np.asanyarray(color_frame.get_data())
 
             # ======================================================================
@@ -205,24 +192,47 @@ if __name__ == "__main__":
             # ======================================================================
             if rotate_camera:
                 depth_image = np.rot90(depth_image, 3)
-                depth_color_image = np.rot90(depth_color_image, 3)
                 color_image = np.rot90(color_image, 3)
 
-            grey_color = 0
-            depth_image_3d = np.dstack((depth_image, depth_image, depth_image))
-
+            # grey_color = 0
+            # depth_image_3d = np.dstack((depth_image, depth_image, depth_image))
             # bg_removed = np.where((depth_image_3d > clipping_distance) | (depth_image_3d <= 0), grey_color, color_image)
 
+            # We need to encode/pack the 16bit depth value to RGB
+            # we do this by treating it as the Hue in HSV. 
+            # we then encode HSV to RGB and stream that
+            # on the other end we reverse RGB to HSV, H will give us the depth value back.
+            # HSV elements are in the 0-1 range so we need to normalize the depth array to 0-1
+            # First set a far plane and set everything beyond that to 0
+
+            clipped = depth_image > 4000
+            depth_image[clipped] = 0
+
+            # Now normalize using that far plane
+            # cv expects the H in degrees, not 0-1 :(
+            depth_image_norm = (depth_image * (360/4000)).astype( np.float32)
+
+            # Create 3 dimensional HSV array where H=depth, S=1, V=1
+            depth_hsv = np.concatenate([depth_image_norm[..., np.newaxis]]*3, axis=2)
+            #depth_hsv[:,:,0] = 1
+            depth_hsv[:,:,1] = 1
+            depth_hsv[:,:,2] = 1
+
+            discard = depth_image_norm == 0
+            s = depth_hsv[:,:,1]
+            v = depth_hsv[:,:,2] 
+            s[ discard] = 0
+            v[ discard] = 0
+
+            # cv2.cvtColor to convert HSV to RGB
+            # problem is that cv2 expects hsv to 8bit (0-255)
+            hsv = cv2.cvtColor(depth_hsv, cv2.COLOR_HSV2BGR)
+            hsv8 = (hsv*255).astype( np.uint8)
+
             # Stack rgb and depth map images horizontally for visualisation only
-            images = np.vstack((color_image, depth_color_image))
-            #images = cv2.resize(images, (720, 1280), interpolation = cv2.INTER_AREA)
-            # Show horizontally stacked rgb and depth map images
+            images = np.vstack((color_image, hsv8))
 
-
-            
-            # sent = out_send.write(depth_color_image)
-
-            # print(sent)
+            # push to gstreamer
             frame = images.tostring()
             buf = Gst.Buffer.new_allocate(None, len(frame), None)
             buf.fill(0,frame)
