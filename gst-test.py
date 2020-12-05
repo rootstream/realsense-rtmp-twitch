@@ -7,8 +7,12 @@ import json
 import time
 import platform
 import gi
+
 gi.require_version('Gst', '1.0')
 from gi.repository import GObject, Gst
+
+Gst.debug_set_active(True)
+Gst.debug_set_default_threshold(2)
 
 Gst.init(None)
 mainloop = GObject.MainLoop()
@@ -28,9 +32,9 @@ def on_bus_message(message):
         #sys.stderr.write('Error: %s: %s\n' % (err, debug))   
 
 RTMP_SERVER = "rtmp://localhost:1935/live/test"
-CLI='flvmux name=mux ! rtmpsink location="'+ RTMP_SERVER +'" sync=true \
-    videotestsrc do-timestamp=TRUE is-live=TRUE ! videoconvert ! vtenc_h264 ! video/x-h264 ! h264parse ! video/x-h264 ! queue ! mux. \
-    osxaudiosrc device=87 do-timestamp=true ! audioconvert ! audioresample ! audio/x-raw,rate=48000 ! faac bitrate=48000 ! audio/mpeg ! aacparse ! audio/mpeg, mpegversion=4 ! queue ! mux.'
+CLI='flvmux name=mux streamable=true ! rtmpsink location="'+ RTMP_SERVER +'" sync=true \
+    videotestsrc do-timestamp=TRUE is-live=TRUE ! videoconvert ! vtenc_h264 ! video/x-h264 ! h264parse ! video/x-h264 ! queue2 ! mux. \
+    osxaudiosrc device=87 do-timestamp=true ! audioconvert ! audioresample ! audio/x-raw, format=S16LE, rate=16000, channels=1, channel-mask=(bitmask)0x1 ! faac bitrate=48000 ! audio/mpeg ! aacparse ! audio/mpeg, mpegversion=4 ! queue2 ! mux.'
 
 print( CLI )
 pipe=Gst.parse_launch(CLI)
