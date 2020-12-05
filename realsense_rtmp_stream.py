@@ -148,6 +148,10 @@ if __name__ == "__main__":
 
         # ===========================================
         # Setup gstreamer
+        # Usefull gst resources / cheatsheets
+        # https://github.com/matthew1000/gstreamer-cheat-sheet/blob/master/rtmp.md
+        # http://wiki.oz9aec.net/index.php/Gstreamer_cheat_sheet
+        # https://github.com/matthew1000/gstreamer-cheat-sheet/blob/master/mixing.md
         # ===========================================
         RTMP_SERVER = key
         CLI = ''
@@ -160,8 +164,6 @@ if __name__ == "__main__":
             #macos
             CLI='appsrc name=mysource format=TIME do-timestamp=TRUE is-live=TRUE caps="video/x-raw,format=BGR,width='+str(width)+',height='+ str(height*2) + ',framerate=(fraction)30/1,pixel-aspect-ratio=(fraction)1/1" ! videoconvert ! vtenc_h264 ! video/x-h264 ! h264parse ! video/x-h264 ! queue max-size-buffers=4 ! flvmux name=mux ! rtmpsink location="'+ RTMP_SERVER +'" sync=true   osxaudiosrc do-timestamp=true ! audioconvert ! audioresample ! audio/x-raw,rate=48000 ! faac bitrate=48000 ! audio/mpeg ! aacparse ! audio/mpeg, mpegversion=4 ! queue max-size-buffers=4 ! mux.'
 
-            #CLI='videotestsrc do-timestamp=TRUE is-live=TRUE ! videoconvert ! vtenc_h264 ! video/x-h264 ! h264parse ! video/x-h264 ! queue max-size-buffers=4 ! flvmux name=mux ! rtmpsink location="'+ RTMP_SERVER +'" sync=true osxaudiosrc device=87 do-timestamp=true ! audioconvert ! audioresample ! audio/x-raw,rate=48000 ! faac bitrate=48000 ! audio/mpeg ! aacparse ! audio/mpeg, mpegversion=4 ! queue max-size-buffers=4 ! mux.'
-       
         #todo: windows
 
         print( CLI )
