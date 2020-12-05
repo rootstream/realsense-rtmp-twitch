@@ -154,19 +154,20 @@ if __name__ == "__main__":
 
         if platform.system() == "Linux":
             #assuming Linux means RPI
-            CLI='appsrc name=mysource format=TIME do-timestamp=TRUE is-live=TRUE caps="video/x-raw,format=BGR,width='+str(width)+',height='+ str(height*2) + ',framerate=(fraction)30/1,pixel-aspect-ratio=(fraction)1/1" ! videoconvert ! queue max-size-buffers=4 ! omxh264enc ! h264parse ! flvmux name=mux ! rtmpsink location="'+ RTMP_SERVER +'" sync=true alsasrc !  audioconvert ! audioresample ! audio/x-raw,rate=48000 ! voaacenc ! audio/mpeg ! aacparse ! audio/mpeg, mpegversion=4 ! queue ! mux.'
+            CLI='appsrc name=mysource format=TIME do-timestamp=TRUE is-live=TRUE caps="video/x-raw,format=BGR,width='+str(width)+',height='+ str(height*2) + ',framerate=(fraction)30/1,pixel-aspect-ratio=(fraction)1/1" ! videoconvert ! omxh264enc ! video/x-h264 ! h264parse ! video/x-h264 ! queue ! flvmux name=mux ! rtmpsink location="'+ RTMP_SERVER +'" alsasrc ! audioconvert ! audioresample ! audio/x-raw,rate=48000 ! voaacenc ! audio/mpeg ! aacparse ! audio/mpeg, mpegversion=4 ! mux.'
 
         elif platform.system() == "Darwin":
             #macos
-            CLI='appsrc name=mysource format=TIME do-timestamp=TRUE is-live=TRUE caps="video/x-raw,format=BGR,width='+str(width)+',height='+ str(height*2) + ',framerate=(fraction)30/1,pixel-aspect-ratio=(fraction)1/1" ! videoconvert !  vtenc_h264 ! video/x-h264 ! h264parse ! video/x-h264 ! queue max-size-buffers=4 ! flvmux name=mux ! rtmpsink location="'+ RTMP_SERVER +'" sync=false  osxaudiosrc do-timestamp=true ! audioconvert ! audioresample ! audio/x-raw,rate=48000 ! faac bitrate=48000 ! audio/mpeg ! aacparse ! audio/mpeg, mpegversion=4 ! queue ! mux.'
-        
+            CLI='appsrc name=mysource format=TIME do-timestamp=TRUE is-live=TRUE caps="video/x-raw,format=BGR,width='+str(width)+',height='+ str(height*2) + ',framerate=(fraction)30/1,pixel-aspect-ratio=(fraction)1/1" ! videoconvert ! vtenc_h264 ! video/x-h264 ! h264parse ! video/x-h264 ! queue max-size-buffers=4 ! flvmux name=mux ! rtmpsink location="'+ RTMP_SERVER +'" sync=true   osxaudiosrc do-timestamp=true ! audioconvert ! audioresample ! audio/x-raw,rate=48000 ! faac bitrate=48000 ! audio/mpeg ! aacparse ! audio/mpeg, mpegversion=4 ! queue max-size-buffers=4 ! mux.'
+
+            #CLI='videotestsrc do-timestamp=TRUE is-live=TRUE ! videoconvert ! vtenc_h264 ! video/x-h264 ! h264parse ! video/x-h264 ! queue max-size-buffers=4 ! flvmux name=mux ! rtmpsink location="'+ RTMP_SERVER +'" sync=true osxaudiosrc device=87 do-timestamp=true ! audioconvert ! audioresample ! audio/x-raw,rate=48000 ! faac bitrate=48000 ! audio/mpeg ! aacparse ! audio/mpeg, mpegversion=4 ! queue max-size-buffers=4 ! mux.'
+       
         #todo: windows
 
         print( CLI )
         pipe=Gst.parse_launch(CLI)
 
         appsrc=pipe.get_by_name("mysource")
-        #appsink=pipline.get_by_name("sink")
         appsrc.set_property('emit-signals',True) #tell sink to emit signals
 
          # Set up a pipeline bus watch to catch errors.
