@@ -63,11 +63,28 @@ def spatial_filtering(depth_frame, magnitude=2, alpha=0.5, delta=20, holes_fill=
     depth_frame = spatial.process(depth_frame)
     return depth_frame
 
+dbg = True
 
 def hole_filling(depth_frame):
     hole_filling = rs.hole_filling_filter()
     depth_frame = hole_filling.process(depth_frame)
     return depth_frame
+
+def on_bus_message(message):
+    print("on_bus_message")
+    t = message.type
+    if t == Gst.MessageType.EOS:
+        print("Eos")
+    elif t == Gst.MessageType.WARNING:
+        err, debug = message.parse_warning()
+        print('Warning: %s: %s\n' % (err, debug))
+        #sys.stderr.write('Warning: %s: %s\n' % (err, debug))
+    elif t == Gst.MessageType.ERROR:
+        err, debug = message.parse_error()
+        print('Error: %s: %s\n' % (err, debug))
+        #sys.stderr.write('Error: %s: %s\n' % (err, debug))   
+    
+    return True
 
 # define global variables
 # ========================
@@ -77,7 +94,8 @@ depth_img_path = 'captured_images/depth_image/'
 colored_depth_img_path = 'captured_images/coloured_depth_image/'
 intrinsics = True
 rotate_camera = False
-
+width = 640
+height = 480
 
 if __name__ == "__main__":
         # ========================
@@ -85,8 +103,8 @@ if __name__ == "__main__":
     # ========================
     pipeline = rs.pipeline()
     config = rs.config()
-    config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)
-    config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
+    config.enable_stream(rs.stream.depth, width, height, rs.format.z16, 30)
+    config.enable_stream(rs.stream.color, width, height, rs.format.bgr8, 30)
 
     # ======================
     # 2. Start the streaming
@@ -132,16 +150,29 @@ if __name__ == "__main__":
         # Setup gstreamer
         # ===========================================
         RTMP_SERVER = key
-        encoder = "omxh264enc"
-        if platform.system() == "Darwin":
-            encoder = "vtenc_h264"
+        CLI = ''
+
+        if platform.system() == "Linux":
+            #assuming Linux means RPI
+            CLI='appsrc name=mysource format=TIME do-timestamp=TRUE is-live=TRUE caps="video/x-raw,format=BGR,width='+str(width)+',height='+ str(height*2) + ',framerate=(fraction)30/1,pixel-aspect-ratio=(fraction)1/1" ! videoconvert ! queue max-size-buffers=4 ! omxh264enc ! h264parse ! flvmux name=mux ! rtmpsink location="'+ RTMP_SERVER +'" sync=true alsasrc !  audioconvert ! audioresample ! audio/x-raw,rate=48000 ! voaacenc ! audio/mpeg ! aacparse ! audio/mpeg, mpegversion=4 ! queue ! mux.'
+
+        elif platform.system() == "Darwin":
+            #macos
+            CLI='appsrc name=mysource format=TIME do-timestamp=TRUE is-live=TRUE caps="video/x-raw,format=BGR,width='+str(width)+',height='+ str(height*2) + ',framerate=(fraction)30/1,pixel-aspect-ratio=(fraction)1/1" ! videoconvert !  vtenc_h264 ! video/x-h264 ! h264parse ! video/x-h264 ! queue max-size-buffers=4 ! flvmux name=mux ! rtmpsink location="'+ RTMP_SERVER +'" sync=false  osxaudiosrc do-timestamp=true ! audioconvert ! audioresample ! audio/x-raw,rate=48000 ! faac bitrate=48000 ! audio/mpeg ! aacparse ! audio/mpeg, mpegversion=4 ! queue ! mux.'
         
-        CLI='appsrc name=mysource format=TIME do-timestamp=TRUE is-live=TRUE caps="video/x-raw,format=BGR,width=640,height=960,framerate=(fraction)30/1,pixel-aspect-ratio=(fraction)1/1" ! videoconvert ! queue max-size-buffers=4 ! '+ encoder +' ! h264parse ! flvmux ! rtmpsink location="'+ RTMP_SERVER +'" sync=false'
+        #todo: windows
+
         print( CLI )
         pipe=Gst.parse_launch(CLI)
+
         appsrc=pipe.get_by_name("mysource")
         #appsink=pipline.get_by_name("sink")
         appsrc.set_property('emit-signals',True) #tell sink to emit signals
+
+         # Set up a pipeline bus watch to catch errors.
+        bus = pipe.get_bus()
+        bus.connect("message", on_bus_message)
+
         pipe.set_state(Gst.State.PLAYING)
 
         while True:
@@ -176,7 +207,7 @@ if __name__ == "__main__":
             # 9. Apply filtering to the depth image
             # =====================================
             # Apply a spatial filter without hole_filling (i.e. holes_fill=0)
-            depth_frame = spatial_filtering(depth_frame, magnitude=2, alpha=0.5, delta=10, holes_fill=1)
+            # depth_frame = spatial_filtering(depth_frame, magnitude=2, alpha=0.5, delta=10, holes_fill=1)
             # Apply hole filling filter
             # depth_frame = hole_filling(depth_frame)
 
@@ -238,8 +269,18 @@ if __name__ == "__main__":
             buf.fill(0,frame)
             appsrc.emit("push-buffer", buf)
 
+            msg = bus.pop_filtered(
+                Gst.MessageType.ERROR | Gst.MessageType.EOS
+            )
+
+            while( msg ): 
+                on_bus_message(msg)
+                msg = bus.pop_filtered(
+                    Gst.MessageType.ERROR | Gst.MessageType.EOS
+                )
+
             cv2.namedWindow('RGB and Depth Map Images')
-            images = cv2.resize(images, (320, 480), interpolation = cv2.INTER_AREA)
+            images = cv2.resize(images, (width, height*2), interpolation = cv2.INTER_AREA)
             cv2.imshow('RGB and Depth Map Images', images)
             c = cv2.waitKey(1)
 
@@ -247,30 +288,11 @@ if __name__ == "__main__":
             # If the 's' key is pressed, we save the images
             # =============================================
             if c == ord('s'):
-                img_counter = image_file_counter(rgb_img_path)
+                print('stop')
 
-                '''create a stream folders'''
-                if not os.path.exists(rgb_img_path):
-                    os.makedirs(rgb_img_path)
-                if not os.path.exists(depth_img_path):
-                    os.makedirs(depth_img_path)
-                if not os.path.exists(colored_depth_img_path):
-                    os.makedirs(colored_depth_img_path)
-
-                filename = str(img_counter) + '.png'
-                filename_csv = str(img_counter) + '.csv'
-
-                np.savetxt(os.path.join(depth_img_path, filename_csv), np.array(depth_image), delimiter=",")
-
-                filename_raw = str(img_counter) + '.raw'
-                # save the rgb colour image
-                cv2.imwrite(os.path.join(rgb_img_path, filename), images)
-                # Save the depth image in raw binary format uint16.
-                f = open(os.path.join(depth_img_path, filename_raw), mode='wb')
-                depth_image.tofile(f)
-                cv2.imwrite(os.path.join(colored_depth_img_path, filename), depth_color_image)
-
-                print('images have been successfully saved')
+            elif c == ord('p'):
+                print('pause')
+                pipe.set_state(Gst.State.NULL)
 
             elif c == 27:  # esc to exit
                 break
