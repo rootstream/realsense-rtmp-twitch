@@ -20,16 +20,6 @@ key = open(dir_path + "/.key").read()
 # Control parameters
 # =======================
 json_file = dir_path + "/" + "MidResHighDensityPreset.json" # MidResHighDensityPreset.json / custom / MidResHighAccuracyPreset
-clipping_distance_in_meters = 1.5  # 1.5 meters
-# ======================
-
-
-def image_file_counter(path):
-    files = 0
-    for _, _, filenames in os.walk(path):
-        files += len(filenames)
-    return files + 1
-
 
 def loadConfiguration(profile, json_file):
     dev = profile.get_device()
@@ -63,8 +53,6 @@ def spatial_filtering(depth_frame, magnitude=2, alpha=0.5, delta=20, holes_fill=
     depth_frame = spatial.process(depth_frame)
     return depth_frame
 
-dbg = True
-
 def hole_filling(depth_frame):
     hole_filling = rs.hole_filling_filter()
     depth_frame = hole_filling.process(depth_frame)
@@ -89,11 +77,7 @@ def on_bus_message(message):
 # define global variables
 # ========================
 # file names and paths
-rgb_img_path = 'captured_images/rgb_image/'
-depth_img_path = 'captured_images/depth_image/'
-colored_depth_img_path = 'captured_images/coloured_depth_image/'
 intrinsics = True
-rotate_camera = False
 width = 640
 height = 480
 
@@ -147,7 +131,7 @@ if __name__ == "__main__":
         print("")
 
         # ===========================================
-        # Setup gstreamer
+        # 6. Setup gstreamer
         # Usefull gst resources / cheatsheets
         # https://github.com/matthew1000/gstreamer-cheat-sheet/blob/master/rtmp.md
         # http://wiki.oz9aec.net/index.php/Gstreamer_cheat_sheet
@@ -188,17 +172,17 @@ if __name__ == "__main__":
 
         while True:
             # ======================================
-            # 6. Wait for a coherent pair of frames:
+            # 7. Wait for a coherent pair of frames:
             # ======================================
             frames = pipeline.wait_for_frames()
 
             # =======================================
-            # 7. Align the depth frame to color frame
+            # 8. Align the depth frame to color frame
             # =======================================
             aligned_frames = align.process(frames)
 
             # ================================================
-            # 8. Fetch the depth and colour frames from stream
+            # 9. Fetch the depth and colour frames from stream
             # ================================================
             depth_frame = aligned_frames.get_depth_frame()
             color_frame = aligned_frames.get_color_frame()
@@ -215,7 +199,7 @@ if __name__ == "__main__":
                 intrinsics = False
 
             # =====================================
-            # 9. Apply filtering to the depth image
+            # 10. Apply filtering to the depth image
             # =====================================
             # Apply a spatial filter without hole_filling (i.e. holes_fill=0)
             # depth_frame = spatial_filtering(depth_frame, magnitude=2, alpha=0.5, delta=10, holes_fill=1)
@@ -229,17 +213,8 @@ if __name__ == "__main__":
             color_image = np.asanyarray(color_frame.get_data())
 
             # ======================================================================
-            # 12. Only rotate the images if the realsense camera is placed vertical.
-            # Otherwise set the variable "rotate_camera = False"
-            # ======================================================================
-            if rotate_camera:
-                depth_image = np.rot90(depth_image, 3)
-                color_image = np.rot90(color_image, 3)
-
-            # grey_color = 0
-            # depth_image_3d = np.dstack((depth_image, depth_image, depth_image))
-            # bg_removed = np.where((depth_image_3d > clipping_distance) | (depth_image_3d <= 0), grey_color, color_image)
-
+            # 12. Conver depth to hsv
+            # ==================================
             # We need to encode/pack the 16bit depth value to RGB
             # we do this by treating it as the Hue in HSV. 
             # we then encode HSV to RGB and stream that
@@ -280,16 +255,18 @@ if __name__ == "__main__":
             buf.fill(0,frame)
             appsrc.emit("push-buffer", buf)
 
+            #process any messages from gstreamer
             msg = bus.pop_filtered(
                 Gst.MessageType.ERROR | Gst.MessageType.EOS
             )
-
+            #empty the message queue if there is one
             while( msg ): 
                 on_bus_message(msg)
                 msg = bus.pop_filtered(
                     Gst.MessageType.ERROR | Gst.MessageType.EOS
                 )
 
+            #preview side by side because of landscape orientation of the pi
             preview = np.hstack((color_image, hsv8))
             cv2.namedWindow('RGB and Depth Map Images')
             #preview = cv2.resize(images, (width, height*2), interpolation = cv2.INTER_AREA)
@@ -297,18 +274,13 @@ if __name__ == "__main__":
             c = cv2.waitKey(1)
 
             # =============================================
-            # If the 's' key is pressed, we save the images
+            # If the esc key is pressed exit
             # =============================================
-            if c == ord('s'):
-                print('stop')
-
-            elif c == ord('p'):
-                print('pause')
-                pipe.set_state(Gst.State.NULL)
-
-            elif c == 27:  # esc to exit
+            if c == 27:  # esc to exit
                 break
-
+    except:        
+        e = sys.exc_info()[0]
+        print( "Unexpected Error: %s" % e )
     finally:
         # Stop streaming
         pipeline.stop()
