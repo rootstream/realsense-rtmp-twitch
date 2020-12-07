@@ -6,3 +6,9 @@ captured_images
 .key
 
 *.log
+
+*.flv
+
+*.mp4
+
+*.wav
