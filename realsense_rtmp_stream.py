@@ -158,7 +158,15 @@ if __name__ == "__main__":
 
         if platform.system() == "Linux":
             #assuming Linux means RPI
-            CLI='appsrc name=mysource format=TIME do-timestamp=TRUE is-live=TRUE caps="video/x-raw,format=BGR,width='+str(width)+',height='+ str(height*2) + ',framerate=(fraction)30/1,pixel-aspect-ratio=(fraction)1/1" ! videoconvert ! omxh264enc ! video/x-h264 ! h264parse ! video/x-h264 ! queue ! flvmux name=mux ! rtmpsink location="'+ RTMP_SERVER +'" alsasrc ! audioconvert ! audioresample ! audio/x-raw,rate=48000 ! voaacenc ! audio/mpeg ! aacparse ! audio/mpeg, mpegversion=4 ! mux.'
+            caps =  'caps="video/x-raw,format=BGR,width='+str(width)+',height='+ str(height*2) + ',framerate=(fraction)30/1,pixel-aspect-ratio=(fraction)1/1"'
+            
+            CLI='flvmux name=mux streamable=true latency=3000000000 ! rtmpsink location="'+ RTMP_SERVER +' live=1 flashver=FME/3.0%20(compatible;%20FMSc%201.0)" appsrc name=mysource format=TIME do-timestamp=TRUE is-live=TRUE '+ str(caps) +' ! \
+            videoconvert !  omxh264enc ! video/x-h264 ! h264parse ! video/x-h264 ! \
+            queue max-size-buffers=0 max-size-bytes=0 max-size-time=180000000 min-threshold-buffers=1 leaky=upstream ! mux. \
+            alsasrc ! audio/x-raw, format=S16LE, rate=44100, channels=1 ! voaacenc bitrate=44100 !  audio/mpeg ! aacparse ! audio/mpeg, mpegversion=4 ! \
+            queue max-size-buffers=0 max-size-bytes=0 max-size-time=4000000000 min-threshold-buffers=1 ! mux.'
+		            
+            #CLI='appsrc name=mysource format=TIME do-timestamp=TRUE is-live=TRUE caps="video/x-raw,format=BGR,width='+str(width)+',height='+ str(height*2) + ',framerate=(fraction)30/1,pixel-aspect-ratio=(fraction)1/1" ! videoconvert ! omxh264enc ! video/x-h264 ! h264parse ! video/x-h264 ! queue ! flvmux name=mux ! rtmpsink location="'+ RTMP_SERVER +'" alsasrc ! audioconvert ! audioresample ! audio/x-raw,rate=48000 ! voaacenc ! audio/mpeg ! aacparse ! audio/mpeg, mpegversion=4 ! mux.'
 
         elif platform.system() == "Darwin":
             #macos
@@ -282,9 +290,10 @@ if __name__ == "__main__":
                     Gst.MessageType.ERROR | Gst.MessageType.EOS
                 )
 
+            preview = np.hstack((color_image, hsv8))
             cv2.namedWindow('RGB and Depth Map Images')
-            images = cv2.resize(images, (width, height*2), interpolation = cv2.INTER_AREA)
-            cv2.imshow('RGB and Depth Map Images', images)
+            #preview = cv2.resize(images, (width, height*2), interpolation = cv2.INTER_AREA)
+            cv2.imshow('RGB and Depth Map Images', preview)
             c = cv2.waitKey(1)
 
             # =============================================
