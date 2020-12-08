@@ -7,15 +7,34 @@ import os
 import json
 import time
 import platform
+import asyncio
+
+import multiprocessing
+from multiprocessing import Process
+
+from flask import Flask, Response, render_template, send_from_directory
+from flask_socketio import SocketIO, emit
+
 import gi
 gi.require_version('Gst', '1.0')
 from gi.repository import GObject, Gst
 
+# define global variables
+# ========================
+width = 640
+height = 480
+playing = False
+
+streams = []
+
+app = Flask(__name__, 
+    static_folder='web', 
+    static_url_path='')
+socketio = SocketIO(app)
+
 Gst.init(None)
 
 dir_path = os.path.dirname(os.path.realpath(__file__))
-
-key = open(dir_path + "/.key").read()
 
 # Control parameters
 # =======================
@@ -42,7 +61,6 @@ def loadConfiguration(profile, json_file):
         advnc_mode = rs.rs400_advanced_mode(dev)
         print("Advanced mode is", "enabled" if advnc_mode.is_enabled() else "disabled")
         advnc_mode.load_json(json_string)
-
 
 def spatial_filtering(depth_frame, magnitude=2, alpha=0.5, delta=20, holes_fill=0):
     spatial = rs.spatial_filter()
@@ -74,14 +92,7 @@ def on_bus_message(message):
     
     return True
 
-# define global variables
-# ========================
-# file names and paths
-intrinsics = True
-width = 640
-height = 480
-
-if __name__ == "__main__":
+def start_stream( rtmp_url ):
         # ========================
     # 1. Configure all streams
     # ========================
@@ -107,8 +118,6 @@ if __name__ == "__main__":
     depth_scale = depth_sensor.get_depth_scale()
     print("Depth Scale is: ", depth_scale)
     print("")
-
-    clipping_distance = clipping_distance_in_meters / depth_scale
 
     # ==========================================
     # 4. Create an align object.
@@ -136,15 +145,14 @@ if __name__ == "__main__":
         # https://github.com/matthew1000/gstreamer-cheat-sheet/blob/master/rtmp.md
         # http://wiki.oz9aec.net/index.php/Gstreamer_cheat_sheet
         # https://github.com/matthew1000/gstreamer-cheat-sheet/blob/master/mixing.md
-        # ===========================================
-        RTMP_SERVER = key
+        # ===========================================     
         CLI = ''
 
         if platform.system() == "Linux":
             #assuming Linux means RPI
             caps =  'caps="video/x-raw,format=BGR,width='+str(width)+',height='+ str(height*2) + ',framerate=(fraction)30/1,pixel-aspect-ratio=(fraction)1/1"'
             
-            CLI='flvmux name=mux streamable=true latency=3000000000 ! rtmpsink location="'+ RTMP_SERVER +' live=1 flashver=FME/3.0%20(compatible;%20FMSc%201.0)" appsrc name=mysource format=TIME do-timestamp=TRUE is-live=TRUE '+ str(caps) +' ! \
+            CLI='flvmux name=mux streamable=true latency=3000000000 ! rtmpsink location="'+ rtmp_url +' live=1 flashver=FME/3.0%20(compatible;%20FMSc%201.0)" appsrc name=mysource format=TIME do-timestamp=TRUE is-live=TRUE '+ str(caps) +' ! \
             videoconvert !  omxh264enc ! video/x-h264 ! h264parse ! video/x-h264 ! \
             queue max-size-buffers=0 max-size-bytes=0 max-size-time=180000000 min-threshold-buffers=1 leaky=upstream ! mux. \
             alsasrc ! audio/x-raw, format=S16LE, rate=44100, channels=1 ! voaacenc bitrate=44100 !  audio/mpeg ! aacparse ! audio/mpeg, mpegversion=4 ! \
@@ -154,7 +162,7 @@ if __name__ == "__main__":
 
         elif platform.system() == "Darwin":
             #macos
-            CLI='appsrc name=mysource format=TIME do-timestamp=TRUE is-live=TRUE caps="video/x-raw,format=BGR,width='+str(width)+',height='+ str(height*2) + ',framerate=(fraction)30/1,pixel-aspect-ratio=(fraction)1/1" ! videoconvert ! vtenc_h264 ! video/x-h264 ! h264parse ! video/x-h264 ! queue max-size-buffers=4 ! flvmux name=mux ! rtmpsink location="'+ RTMP_SERVER +'" sync=true   osxaudiosrc do-timestamp=true ! audioconvert ! audioresample ! audio/x-raw,rate=48000 ! faac bitrate=48000 ! audio/mpeg ! aacparse ! audio/mpeg, mpegversion=4 ! queue max-size-buffers=4 ! mux.'
+            CLI='appsrc name=mysource format=TIME do-timestamp=TRUE is-live=TRUE caps="video/x-raw,format=BGR,width='+str(width)+',height='+ str(height*2) + ',framerate=(fraction)30/1,pixel-aspect-ratio=(fraction)1/1" ! videoconvert ! vtenc_h264 ! video/x-h264 ! h264parse ! video/x-h264 ! queue max-size-buffers=4 ! flvmux name=mux ! rtmpsink location="'+ rtmp_url +'" sync=true   osxaudiosrc do-timestamp=true ! audioconvert ! audioresample ! audio/x-raw,rate=48000 ! faac bitrate=48000 ! audio/mpeg ! aacparse ! audio/mpeg, mpegversion=4 ! queue max-size-buffers=4 ! mux.'
 
         #todo: windows
 
@@ -169,8 +177,9 @@ if __name__ == "__main__":
         bus.connect("message", on_bus_message)
 
         pipe.set_state(Gst.State.PLAYING)
-
-        while True:
+        intrinsics = True
+        
+        while playing:
             # ======================================
             # 7. Wait for a coherent pair of frames:
             # ======================================
@@ -284,3 +293,59 @@ if __name__ == "__main__":
     finally:
         # Stop streaming
         pipeline.stop()
+        pipe.set_state(Gst.State.PAUSED)
+
+
+
+@socketio.on('message')
+def handle_message(message):
+    print('received message: ' + message)
+
+@socketio.on('connect')
+def test_connect():
+    emit('my response', {'data': 'Connected'})
+
+@socketio.on('disconnect')
+def test_disconnect():
+    print('Client disconnected')    
+
+@socketio.on('start')
+def handle_start(url):
+    print('start ' + url)
+    if len(streams) == 0:
+        stream = Process(  # Create a daemonic process with heavy "my_func"
+            target=start_stream,
+            args=(url,)
+        )
+        playing = True        
+        stream.start()
+        streams.append(stream)
+
+@socketio.on('stop')
+def handle_stop():
+    print('Stop')
+    playing = False
+    if len(streams) > 0:
+        streams[0].terminate()
+        streams[0].join()
+
+@app.route('/')
+def root():
+    print('route')  
+    return app.send_static_file('index.html')
+
+def main():
+    try:
+        socketio.run(app)
+    finally:
+        if len(streams) > 0:
+            playing = False
+            streams[0].terminate()
+            streams[0].join()
+
+if __name__ == '__main__':
+    multiprocessing.set_start_method('forkserver')
+    main()
+
+
+

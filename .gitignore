@@ -12,3 +12,5 @@ captured_images
 *.mp4
 
 *.wav
+
+__pycache__/

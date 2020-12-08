@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Volumetric Performance Toolbox</title>
+</head>
+<body>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dat-gui/0.7.6/dat.gui.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/2.3.1/socket.io.min.js"></script>
+
+    <script>
+      const socket = io();
+
+      socket.on('disconnect', () => {
+        console.log('disconnect');
+      });
+
+      socket.on('connect', () => {
+        console.log('connect');
+      });
+
+      socket.on('message', data => {
+        console.log('message');
+        console.log(data);
+      });
+
+      function sendMsg(){
+        console.log( socket.send('Hello!') );
+      }
+      function start(){
+        console.log( document.getElementById("stream_url").value);
+        socket.emit('start', document.getElementById("stream_url").value);
+      }
+      function stop(){
+        socket.emit('stop');
+      }
+    </script>
+
+    <input id="stream_url"></input>
+    <button onClick="start()">Start</button>
+    <button onClick="stop()">Stop</button>
+
+</body>
+</html>
