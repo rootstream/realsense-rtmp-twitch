@@ -6,6 +6,7 @@ import cv2
 import os
 import json
 import time
+import sys
 import platform
 import asyncio
 
@@ -19,333 +20,281 @@ import gi
 gi.require_version('Gst', '1.0')
 from gi.repository import GObject, Gst
 
-# define global variables
-# ========================
-width = 640
-height = 480
-playing = False
+class RealsenseCapture (multiprocessing.Process):
 
-streams = []
+    def __init__(self, rtmp_uri, config_json, w, h):
+        multiprocessing.Process.__init__(self)
+        print ("Starting Realsense Capture")
 
-app = Flask(__name__, 
-    static_folder='web', 
-    static_url_path='')
-socketio = SocketIO(app)
+        self.exit = multiprocessing.Event()
+        self.rtmp_url = rtmp_uri
+        self.json_file = config_json
+        self.width = w
+        self.height = h
 
-Gst.init(None)
+    def shutdown(self):
+        print ("Shutdown Realsense Capture")
+        self.exit.set()
 
-dir_path = os.path.dirname(os.path.realpath(__file__))
-
-# Control parameters
-# =======================
-json_file = dir_path + "/" + "MidResHighDensityPreset.json" # MidResHighDensityPreset.json / custom / MidResHighAccuracyPreset
-
-def loadConfiguration(profile, json_file):
-    dev = profile.get_device()
-    advnc_mode = rs.rs400_advanced_mode(dev)
-    print("Advanced mode is", "enabled" if advnc_mode.is_enabled() else "disabled")
-    json_obj = json.load(open(json_file))
-    json_string = str(json_obj).replace("'", '\"')
-    advnc_mode.load_json(json_string)
-
-    while not advnc_mode.is_enabled():
-        print("Trying to enable advanced mode...")
-        advnc_mode.toggle_advanced_mode(True)
-
-        # At this point the device will disconnect and re-connect.
-        print("Sleeping for 5 seconds...")
-        time.sleep(5)
-
-        # The 'dev' object will become invalid and we need to initialize it again
+    def loadConfiguration(self,profile, json_file):
         dev = profile.get_device()
         advnc_mode = rs.rs400_advanced_mode(dev)
         print("Advanced mode is", "enabled" if advnc_mode.is_enabled() else "disabled")
+        json_obj = json.load(open(json_file))
+        json_string = str(json_obj).replace("'", '\"')
         advnc_mode.load_json(json_string)
 
-def spatial_filtering(depth_frame, magnitude=2, alpha=0.5, delta=20, holes_fill=0):
-    spatial = rs.spatial_filter()
-    spatial.set_option(rs.option.filter_magnitude, magnitude)
-    spatial.set_option(rs.option.filter_smooth_alpha, alpha)
-    spatial.set_option(rs.option.filter_smooth_delta, delta)
-    spatial.set_option(rs.option.holes_fill, holes_fill)
-    depth_frame = spatial.process(depth_frame)
-    return depth_frame
+        while not advnc_mode.is_enabled():
+            print("Trying to enable advanced mode...")
+            advnc_mode.toggle_advanced_mode(True)
 
-def hole_filling(depth_frame):
-    hole_filling = rs.hole_filling_filter()
-    depth_frame = hole_filling.process(depth_frame)
-    return depth_frame
+            # At this point the device will disconnect and re-connect.
+            print("Sleeping for 5 seconds...")
+            time.sleep(5)
 
-def on_bus_message(message):
-    print("on_bus_message")
-    t = message.type
-    if t == Gst.MessageType.EOS:
-        print("Eos")
-    elif t == Gst.MessageType.WARNING:
-        err, debug = message.parse_warning()
-        print('Warning: %s: %s\n' % (err, debug))
-        #sys.stderr.write('Warning: %s: %s\n' % (err, debug))
-    elif t == Gst.MessageType.ERROR:
-        err, debug = message.parse_error()
-        print('Error: %s: %s\n' % (err, debug))
-        #sys.stderr.write('Error: %s: %s\n' % (err, debug))   
-    
-    return True
+            # The 'dev' object will become invalid and we need to initialize it again
+            dev = profile.get_device()
+            advnc_mode = rs.rs400_advanced_mode(dev)
+            print("Advanced mode is", "enabled" if advnc_mode.is_enabled() else "disabled")
+            advnc_mode.load_json(json_string)
 
-def start_stream( rtmp_url ):
+    def spatial_filtering(self,depth_frame, magnitude=2, alpha=0.5, delta=20, holes_fill=0):
+        spatial = rs.spatial_filter()
+        spatial.set_option(rs.option.filter_magnitude, magnitude)
+        spatial.set_option(rs.option.filter_smooth_alpha, alpha)
+        spatial.set_option(rs.option.filter_smooth_delta, delta)
+        spatial.set_option(rs.option.holes_fill, holes_fill)
+        depth_frame = spatial.process(depth_frame)
+        return depth_frame
+
+    def hole_filling(self,depth_frame):
+        hole_filling = rs.hole_filling_filter()
+        depth_frame = hole_filling.process(depth_frame)
+        return depth_frame
+
+    def on_bus_message(self, message):
+        print("on_bus_message")
+        t = message.type
+        if t == Gst.MessageType.EOS:
+            print("Eos")
+        elif t == Gst.MessageType.WARNING:
+            err, debug = message.parse_warning()
+            print('Warning: %s: %s\n' % (err, debug))
+            #sys.stderr.write('Warning: %s: %s\n' % (err, debug))
+        elif t == Gst.MessageType.ERROR:
+            err, debug = message.parse_error()
+            print('Error: %s: %s\n' % (err, debug))
+            #sys.stderr.write('Error: %s: %s\n' % (err, debug))       
+        return True
+
+    def run(self):
         # ========================
-    # 1. Configure all streams
-    # ========================
-    pipeline = rs.pipeline()
-    config = rs.config()
-    config.enable_stream(rs.stream.depth, width, height, rs.format.z16, 30)
-    config.enable_stream(rs.stream.color, width, height, rs.format.bgr8, 30)
+        # 1. Configure all streams
+        # ========================
+        pipeline = rs.pipeline()
+        config = rs.config()
+        config.enable_stream(rs.stream.depth, self.width, self.height, rs.format.z16, 30)
+        config.enable_stream(rs.stream.color, self.width, self.height, rs.format.bgr8, 30)
 
-    # ======================
-    # 2. Start the streaming
-    # ======================
-    print("Starting up the Intel Realsense...")
-    print("")
-    profile = pipeline.start(config)
+        # ======================
+        # 2. Start the streaming
+        # ======================
+        print("Starting up the Intel Realsense...")
+        print("")
+        profile = pipeline.start(config)
 
-    # Load the configuration here
-    loadConfiguration(profile, json_file)
+        # Load the configuration here
+        self.loadConfiguration(profile, self.json_file)
 
-    # =================================
-    # 3. The depth sensor's depth scale
-    # =================================
-    depth_sensor = profile.get_device().first_depth_sensor()
-    depth_scale = depth_sensor.get_depth_scale()
-    print("Depth Scale is: ", depth_scale)
-    print("")
-
-    # ==========================================
-    # 4. Create an align object.
-    #    Align the depth image to the rgb image.
-    # ==========================================
-    align_to = rs.stream.depth
-    align = rs.align(align_to)
-
-    try:
-        # ===========================================
-        # 5. Skip the first 30 frames.
-        # This gives the Auto-Exposure time to adjust
-        # ===========================================
-        for x in range(50):
-            frames = pipeline.wait_for_frames()
-            # Align the depth frame to color frame
-            aligned_frames = align.process(frames)
-
-        print("Intel Realsense started successfully.")
+        # =================================
+        # 3. The depth sensor's depth scale
+        # =================================
+        depth_sensor = profile.get_device().first_depth_sensor()
+        depth_scale = depth_sensor.get_depth_scale()
+        print("Depth Scale is: ", depth_scale)
         print("")
 
-        # ===========================================
-        # 6. Setup gstreamer
-        # Usefull gst resources / cheatsheets
-        # https://github.com/matthew1000/gstreamer-cheat-sheet/blob/master/rtmp.md
-        # http://wiki.oz9aec.net/index.php/Gstreamer_cheat_sheet
-        # https://github.com/matthew1000/gstreamer-cheat-sheet/blob/master/mixing.md
-        # ===========================================     
-        CLI = ''
+        # ==========================================
+        # 4. Create an align object.
+        #    Align the depth image to the rgb image.
+        # ==========================================
+        align_to = rs.stream.depth
+        align = rs.align(align_to)
 
-        if platform.system() == "Linux":
-            #assuming Linux means RPI
-            caps =  'caps="video/x-raw,format=BGR,width='+str(width)+',height='+ str(height*2) + ',framerate=(fraction)30/1,pixel-aspect-ratio=(fraction)1/1"'
+        try:
+            # ===========================================
+            # 5. Skip the first 30 frames.
+            # This gives the Auto-Exposure time to adjust
+            # ===========================================
+            for x in range(50):
+                frames = pipeline.wait_for_frames()
+                # Align the depth frame to color frame
+                aligned_frames = align.process(frames)
+
+            print("Intel Realsense started successfully.")
+            print("")
+
+            # ===========================================
+            # 6. Setup gstreamer
+            # Usefull gst resources / cheatsheets
+            # https://github.com/matthew1000/gstreamer-cheat-sheet/blob/master/rtmp.md
+            # http://wiki.oz9aec.net/index.php/Gstreamer_cheat_sheet
+            # https://github.com/matthew1000/gstreamer-cheat-sheet/blob/master/mixing.md
+            # ===========================================     
+            CLI = ''
+            caps =  'caps="video/x-raw,format=BGR,width='+str(self.width)+',height='+ str(self.height*2) + ',framerate=(fraction)30/1,pixel-aspect-ratio=(fraction)1/1"'
             
-            CLI='flvmux name=mux streamable=true latency=3000000000 ! rtmpsink location="'+ rtmp_url +' live=1 flashver=FME/3.0%20(compatible;%20FMSc%201.0)" appsrc name=mysource format=TIME do-timestamp=TRUE is-live=TRUE '+ str(caps) +' ! \
-            videoconvert !  omxh264enc ! video/x-h264 ! h264parse ! video/x-h264 ! \
-            queue max-size-buffers=0 max-size-bytes=0 max-size-time=180000000 min-threshold-buffers=1 leaky=upstream ! mux. \
-            alsasrc ! audio/x-raw, format=S16LE, rate=44100, channels=1 ! voaacenc bitrate=44100 !  audio/mpeg ! aacparse ! audio/mpeg, mpegversion=4 ! \
-            queue max-size-buffers=0 max-size-bytes=0 max-size-time=4000000000 min-threshold-buffers=1 ! mux.'
-		            
-            #CLI='appsrc name=mysource format=TIME do-timestamp=TRUE is-live=TRUE caps="video/x-raw,format=BGR,width='+str(width)+',height='+ str(height*2) + ',framerate=(fraction)30/1,pixel-aspect-ratio=(fraction)1/1" ! videoconvert ! omxh264enc ! video/x-h264 ! h264parse ! video/x-h264 ! queue ! flvmux name=mux ! rtmpsink location="'+ RTMP_SERVER +'" alsasrc ! audioconvert ! audioresample ! audio/x-raw,rate=48000 ! voaacenc ! audio/mpeg ! aacparse ! audio/mpeg, mpegversion=4 ! mux.'
+            if platform.system() == "Linux":
+                #assuming Linux means RPI
+                
+                CLI='flvmux name=mux streamable=true latency=3000000000 ! rtmpsink location="'+  self.rtmp_url +' live=1 flashver=FME/3.0%20(compatible;%20FMSc%201.0)" \
+                    appsrc name=mysource format=TIME do-timestamp=TRUE is-live=TRUE '+ str(caps) +' ! \
+                    videoconvert !  omxh264enc ! video/x-h264 ! h264parse ! video/x-h264 ! \
+                    queue max-size-buffers=0 max-size-bytes=0 max-size-time=180000000 min-threshold-buffers=1 leaky=upstream ! mux. \
+                    alsasrc ! audio/x-raw, format=S16LE, rate=44100, channels=1 ! voaacenc bitrate=44100 !  audio/mpeg ! aacparse ! audio/mpeg, mpegversion=4 ! \
+                    queue max-size-buffers=0 max-size-bytes=0 max-size-time=4000000000 min-threshold-buffers=1 ! mux.'
 
-        elif platform.system() == "Darwin":
-            #macos
-            CLI='appsrc name=mysource format=TIME do-timestamp=TRUE is-live=TRUE caps="video/x-raw,format=BGR,width='+str(width)+',height='+ str(height*2) + ',framerate=(fraction)30/1,pixel-aspect-ratio=(fraction)1/1" ! videoconvert ! vtenc_h264 ! video/x-h264 ! h264parse ! video/x-h264 ! queue max-size-buffers=4 ! flvmux name=mux ! rtmpsink location="'+ rtmp_url +'" sync=true   osxaudiosrc do-timestamp=true ! audioconvert ! audioresample ! audio/x-raw,rate=48000 ! faac bitrate=48000 ! audio/mpeg ! aacparse ! audio/mpeg, mpegversion=4 ! queue max-size-buffers=4 ! mux.'
+            elif platform.system() == "Darwin":
+                #macos
+                #CLI='flvmux name=mux streamable=true ! rtmpsink location="'+  self.rtmp_url +' live=1 flashver=FME/3.0%20(compatible;%20FMSc%201.0)" \
+                #    appsrc name=mysource format=TIME do-timestamp=TRUE is-live=TRUE '+ str(caps) +' ! \
+                #    videoconvert ! vtenc_h264 ! video/x-h264 ! h264parse ! video/x-h264 ! \
+                #    queue max-size-buffers=4 ! flvmux name=mux. \
+                #    osxaudiosrc do-timestamp=true ! audioconvert ! audioresample ! audio/x-raw,rate=48000 ! faac bitrate=48000 ! audio/mpeg ! aacparse ! audio/mpeg, mpegversion=4 ! \
+                #    queue max-size-buffers=4 ! mux.'
 
-        #todo: windows
+                CLI='appsrc name=mysource format=TIME do-timestamp=TRUE is-live=TRUE caps="video/x-raw,format=BGR,width='+str(self.width)+',height='+ str(self.height*2) + ',framerate=(fraction)30/1,pixel-aspect-ratio=(fraction)1/1" ! videoconvert ! vtenc_h264 ! video/x-h264 ! h264parse ! video/x-h264 ! queue max-size-buffers=4 ! flvmux name=mux ! rtmpsink location="'+ self.rtmp_url +'" sync=true   osxaudiosrc do-timestamp=true ! audioconvert ! audioresample ! audio/x-raw,rate=48000 ! faac bitrate=48000 ! audio/mpeg ! aacparse ! audio/mpeg, mpegversion=4 ! queue max-size-buffers=4 ! mux.' 
 
-        print( CLI )
-        pipe=Gst.parse_launch(CLI)
 
-        appsrc=pipe.get_by_name("mysource")
-        appsrc.set_property('emit-signals',True) #tell sink to emit signals
+            #TODO: windows
 
-         # Set up a pipeline bus watch to catch errors.
-        bus = pipe.get_bus()
-        bus.connect("message", on_bus_message)
+            print( CLI )
+            pipe=Gst.parse_launch(CLI)
 
-        pipe.set_state(Gst.State.PLAYING)
-        intrinsics = True
-        
-        while playing:
-            # ======================================
-            # 7. Wait for a coherent pair of frames:
-            # ======================================
-            frames = pipeline.wait_for_frames()
+            appsrc=pipe.get_by_name("mysource")
+            appsrc.set_property('emit-signals',True) #tell sink to emit signals
 
-            # =======================================
-            # 8. Align the depth frame to color frame
-            # =======================================
-            aligned_frames = align.process(frames)
+            # Set up a pipeline bus watch to catch errors.
+            bus = pipe.get_bus()
+            bus.connect("message", self.on_bus_message)
 
-            # ================================================
-            # 9. Fetch the depth and colour frames from stream
-            # ================================================
-            depth_frame = aligned_frames.get_depth_frame()
-            color_frame = aligned_frames.get_color_frame()
-            if not depth_frame or not color_frame:
-                continue
+            pipe.set_state(Gst.State.PLAYING)
+            intrinsics = True
+            
+            while not self.exit.is_set():
+                # ======================================
+                # 7. Wait for a coherent pair of frames:
+                # ======================================
+                frames = pipeline.wait_for_frames()
 
-            # print the camera intrinsics just once. it is always the same
-            if intrinsics:
-                print("Intel Realsense Camera Intrinsics: ")
-                print("========================================")
-                print(depth_frame.profile.as_video_stream_profile().intrinsics)
-                print(color_frame.profile.as_video_stream_profile().intrinsics)
-                print("")
-                intrinsics = False
+                # =======================================
+                # 8. Align the depth frame to color frame
+                # =======================================
+                aligned_frames = align.process(frames)
 
-            # =====================================
-            # 10. Apply filtering to the depth image
-            # =====================================
-            # Apply a spatial filter without hole_filling (i.e. holes_fill=0)
-            # depth_frame = spatial_filtering(depth_frame, magnitude=2, alpha=0.5, delta=10, holes_fill=1)
-            # Apply hole filling filter
-            # depth_frame = hole_filling(depth_frame)
+                # ================================================
+                # 9. Fetch the depth and colour frames from stream
+                # ================================================
+                depth_frame = aligned_frames.get_depth_frame()
+                color_frame = aligned_frames.get_color_frame()
+                if not depth_frame or not color_frame:
+                    pass
 
-            # ==================================
-            # 11. Convert images to numpy arrays
-            # ==================================
-            depth_image = np.asanyarray(depth_frame.get_data())
-            color_image = np.asanyarray(color_frame.get_data())
+                # print the camera intrinsics just once. it is always the same
+                if intrinsics:
+                    print("Intel Realsense Camera Intrinsics: ")
+                    print("========================================")
+                    print(depth_frame.profile.as_video_stream_profile().intrinsics)
+                    print(color_frame.profile.as_video_stream_profile().intrinsics)
+                    print("")
+                    intrinsics = False
 
-            # ======================================================================
-            # 12. Conver depth to hsv
-            # ==================================
-            # We need to encode/pack the 16bit depth value to RGB
-            # we do this by treating it as the Hue in HSV. 
-            # we then encode HSV to RGB and stream that
-            # on the other end we reverse RGB to HSV, H will give us the depth value back.
-            # HSV elements are in the 0-1 range so we need to normalize the depth array to 0-1
-            # First set a far plane and set everything beyond that to 0
+                # =====================================
+                # 10. Apply filtering to the depth image
+                # =====================================
+                # Apply a spatial filter without hole_filling (i.e. holes_fill=0)
+                # depth_frame = self.spatial_filtering(depth_frame, magnitude=2, alpha=0.5, delta=10, holes_fill=1)
+                # Apply hole filling filter
+                # depth_frame = self.hole_filling(depth_frame)
 
-            clipped = depth_image > 4000
-            depth_image[clipped] = 0
+                # ==================================
+                # 11. Convert images to numpy arrays
+                # ==================================
+                depth_image = np.asanyarray(depth_frame.get_data())
+                color_image = np.asanyarray(color_frame.get_data())
 
-            # Now normalize using that far plane
-            # cv expects the H in degrees, not 0-1 :(
-            depth_image_norm = (depth_image * (360/4000)).astype( np.float32)
+                # ======================================================================
+                # 12. Conver depth to hsv
+                # ==================================
+                # We need to encode/pack the 16bit depth value to RGB
+                # we do this by treating it as the Hue in HSV. 
+                # we then encode HSV to RGB and stream that
+                # on the other end we reverse RGB to HSV, H will give us the depth value back.
+                # HSV elements are in the 0-1 range so we need to normalize the depth array to 0-1
+                # First set a far plane and set everything beyond that to 0
 
-            # Create 3 dimensional HSV array where H=depth, S=1, V=1
-            depth_hsv = np.concatenate([depth_image_norm[..., np.newaxis]]*3, axis=2)
-            #depth_hsv[:,:,0] = 1
-            depth_hsv[:,:,1] = 1
-            depth_hsv[:,:,2] = 1
+                clipped = depth_image > 4000
+                depth_image[clipped] = 0
 
-            discard = depth_image_norm == 0
-            s = depth_hsv[:,:,1]
-            v = depth_hsv[:,:,2] 
-            s[ discard] = 0
-            v[ discard] = 0
+                # Now normalize using that far plane
+                # cv expects the H in degrees, not 0-1 :(
+                depth_image_norm = (depth_image * (360/4000)).astype( np.float32)
 
-            # cv2.cvtColor to convert HSV to RGB
-            # problem is that cv2 expects hsv to 8bit (0-255)
-            hsv = cv2.cvtColor(depth_hsv, cv2.COLOR_HSV2BGR)
-            hsv8 = (hsv*255).astype( np.uint8)
+                # Create 3 dimensional HSV array where H=depth, S=1, V=1
+                depth_hsv = np.concatenate([depth_image_norm[..., np.newaxis]]*3, axis=2)
+                #depth_hsv[:,:,0] = 1
+                depth_hsv[:,:,1] = 1
+                depth_hsv[:,:,2] = 1
 
-            # Stack rgb and depth map images horizontally for visualisation only
-            images = np.vstack((color_image, hsv8))
+                discard = depth_image_norm == 0
+                s = depth_hsv[:,:,1]
+                v = depth_hsv[:,:,2] 
+                s[ discard] = 0
+                v[ discard] = 0
 
-            # push to gstreamer
-            frame = images.tostring()
-            buf = Gst.Buffer.new_allocate(None, len(frame), None)
-            buf.fill(0,frame)
-            appsrc.emit("push-buffer", buf)
+                # cv2.cvtColor to convert HSV to RGB
+                # problem is that cv2 expects hsv to 8bit (0-255)
+                hsv = cv2.cvtColor(depth_hsv, cv2.COLOR_HSV2BGR)
+                hsv8 = (hsv*255).astype( np.uint8)
 
-            #process any messages from gstreamer
-            msg = bus.pop_filtered(
-                Gst.MessageType.ERROR | Gst.MessageType.EOS
-            )
-            #empty the message queue if there is one
-            while( msg ): 
-                on_bus_message(msg)
+                # Stack rgb and depth map images horizontally for visualisation only
+                images = np.vstack((color_image, hsv8))
+
+                # push to gstreamer
+                frame = images.tostring()
+                buf = Gst.Buffer.new_allocate(None, len(frame), None)
+                buf.fill(0,frame)
+                appsrc.emit("push-buffer", buf)
+
+                #process any messages from gstreamer
                 msg = bus.pop_filtered(
                     Gst.MessageType.ERROR | Gst.MessageType.EOS
                 )
+                #empty the message queue if there is one
+                while( msg ): 
+                    self.on_bus_message(msg)
+                    msg = bus.pop_filtered(
+                        Gst.MessageType.ERROR | Gst.MessageType.EOS
+                    )
 
-            #preview side by side because of landscape orientation of the pi
-            preview = np.hstack((color_image, hsv8))
-            cv2.namedWindow('RGB and Depth Map Images')
-            #preview = cv2.resize(images, (width, height*2), interpolation = cv2.INTER_AREA)
-            cv2.imshow('RGB and Depth Map Images', preview)
-            c = cv2.waitKey(1)
+                #preview side by side because of landscape orientation of the pi
+                preview = np.hstack((color_image, hsv8))
+                cv2.namedWindow('RGB and Depth Map Images')
+                #preview = cv2.resize(images, (self.width, self.height*2), interpolation = cv2.INTER_AREA)
+                cv2.imshow('RGB and Depth Map Images', preview)
+                c = cv2.waitKey(1)
 
-            # =============================================
-            # If the esc key is pressed exit
-            # =============================================
-            if c == 27:  # esc to exit
-                break
-    except:        
-        e = sys.exc_info()[0]
-        print( "Unexpected Error: %s" % e )
-    finally:
-        # Stop streaming
-        pipeline.stop()
-        pipe.set_state(Gst.State.PAUSED)
-
-
-
-@socketio.on('message')
-def handle_message(message):
-    print('received message: ' + message)
-
-@socketio.on('connect')
-def test_connect():
-    emit('my response', {'data': 'Connected'})
-
-@socketio.on('disconnect')
-def test_disconnect():
-    print('Client disconnected')    
-
-@socketio.on('start')
-def handle_start(url):
-    print('start ' + url)
-    if len(streams) == 0:
-        stream = Process(  # Create a daemonic process with heavy "my_func"
-            target=start_stream,
-            args=(url,)
-        )
-        playing = True        
-        stream.start()
-        streams.append(stream)
-
-@socketio.on('stop')
-def handle_stop():
-    print('Stop')
-    playing = False
-    if len(streams) > 0:
-        streams[0].terminate()
-        streams[0].join()
-
-@app.route('/')
-def root():
-    print('route')  
-    return app.send_static_file('index.html')
-
-def main():
-    try:
-        socketio.run(app)
-    finally:
-        if len(streams) > 0:
-            playing = False
-            streams[0].terminate()
-            streams[0].join()
-
-if __name__ == '__main__':
-    multiprocessing.set_start_method('forkserver')
-    main()
-
-
-
+                # =============================================
+                # If the esc key is pressed exit
+                # =============================================
+                if c == 27:  # esc to exit
+                    break
+        except:        
+            e = sys.exc_info()[0]
+            print( "Unexpected Error: %s" % e )
+        finally:
+            # Stop streaming
+            pipeline.stop()
+            pipe.set_state(Gst.State.PAUSED)
+        
+        print ("Exiting capture loop")
