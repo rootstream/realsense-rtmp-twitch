@@ -16,5 +16,6 @@ fi
 echo "......................................................."
 echo ""
 export FLASK_APP=/home/pi/Documents/raspberry-capture-kit/capturekit.py
+cd /home/pi/Documents/raspberry-capture-kit/
 flask run --host=0.0.0.0 --port=80
 
