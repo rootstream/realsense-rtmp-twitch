@@ -1,0 +1,13 @@
+#!/bin/sh
+[Unit]
+Description=Flask app for the capture kit front-end to get the stream key
+
+[Service]
+EnvironmentFile=/etc/environment
+User=pi
+WorkingDirectory=/home/pi/Documents/raspberry-capture-kit/
+ExecStart=/home/pi/Documents/raspberry-capture-kit/launchflask.sh
+Restart=no
+
+[Install]
+WantedBy=multi-user.target
