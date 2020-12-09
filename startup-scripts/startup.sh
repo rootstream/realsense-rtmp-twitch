@@ -15,4 +15,4 @@ else
 fi
 echo "......................................................."
 echo ""
-/home/pi/Documents/raspberry-capture-kit/launchflask.sh
+systemctl start flask.service
