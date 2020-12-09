@@ -15,3 +15,6 @@ else
 fi
 echo "......................................................."
 echo ""
+export FLASK_APP=/home/pi/Documents/raspberry-capture-kit/capturekit.py
+flask run --host=0.0.0.0 --port=80
+
