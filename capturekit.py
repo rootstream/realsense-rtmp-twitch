@@ -83,7 +83,7 @@ def handle_stop():
     streaming = False
     if len(streams) > 0:
         streams[0].shutdown()
-        streams.pop(streams[0])
+        streams.remove(streams[0])
 
 @app.route('/')
 def root():
@@ -199,8 +199,12 @@ def main():
                 newpreview = streams[0].LastPreview()
                 if( newpreview is not None ):
                     preview = newpreview
-                
-            uiframe[200:680, 0:1280] = preview
+            else:
+                preview[:] = (0,0,0)
+                uiframe[:] = (50, 50, 50)  
+ 
+            y = 150
+            uiframe[y:y+480, 0:1280] = preview
 
             # Using cv2.putText() method 
             uiframe = cv2.putText(uiframe, 'http://{0}:5000/'.format( hostip), (50,100), cv2.FONT_HERSHEY_SIMPLEX, 2.5, (255, 255, 255) , 4, cv2.LINE_AA)
@@ -211,7 +215,7 @@ def main():
             if cv2.waitKey(1) == 27:
                 running = False
 
-            socketio.sleep(0.1)
+            socketio.sleep(0.001)
 
     finally:
         print('shutting down')  
