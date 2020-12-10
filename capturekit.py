@@ -101,11 +101,11 @@ def root():
     return app.send_static_file('index.html')
 
 #TODO: Add some kind of security step here? Anybody on the local network can shut down hardware
-@socketio.on('shutdown')
-def handle_shudown():
+@socketio.on('reboot')
+def handle_reboot():
     global running
     
-    print('Shutdown')  
+    print('Reboot')  
     running = False
     try:
         socketio.stop()
@@ -114,15 +114,20 @@ def handle_shudown():
 
     print('Shutdown Complete') 
 
+    if platform.system() == "Linux":
+        os.system('systemctl reboot -i')
+
 #TODO: Add some kind of security step here? Anybody on the local network can shut down hardware
 @app.route('/shutdown')
 def quit():
     global running
     running = False
+
     try:
         socketio.stop()
     except:
         pass
+    
     return ('', 204)
 
 class WebSocketServer(object):
