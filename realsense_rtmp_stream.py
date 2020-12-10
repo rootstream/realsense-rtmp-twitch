@@ -255,19 +255,24 @@ class RealsenseCapture (mp.Process):
                 # ======================================
                 # 7. Wait for a coherent pair of frames:
                 # ======================================
-                frames = self.rspipeline.wait_for_frames(1000)
+                try:
+                    frames = self.rspipeline.wait_for_frames(1000)
 
-                # =======================================
-                # 8. Align the depth frame to color frame
-                # =======================================
-                aligned_frames = align.process(frames)
+                    # =======================================
+                    # 8. Align the depth frame to color frame
+                    # =======================================
+                    aligned_frames = align.process(frames)
 
-                # ================================================
-                # 9. Fetch the depth and colour frames from stream
-                # ================================================
-                depth_frame = aligned_frames.get_depth_frame()
-                color_frame = aligned_frames.get_color_frame()
-                if not depth_frame or not color_frame:
+                    # ================================================
+                    # 9. Fetch the depth and colour frames from stream
+                    # ================================================
+                    depth_frame = aligned_frames.get_depth_frame()
+                    color_frame = aligned_frames.get_color_frame()
+                    if not depth_frame or not color_frame:
+                        pass
+                
+                except:
+                    self.statusQueue("Exception getting realsense frames")
                     pass
 
                 # print the camera intrinsics just once. it is always the same
@@ -357,7 +362,7 @@ class RealsenseCapture (mp.Process):
         except:        
             e = sys.exc_info()[0]
             print( "Unexpected Error: %s" % e )
-            print( sys.exc_info())
+            self.statusQueue.put("Unexpected Error: %s" % e)
 
         finally:
             # Stop streaming
