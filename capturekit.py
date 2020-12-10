@@ -120,7 +120,7 @@ class WebSocketServer(object):
         self.thread = None
 
     def start_server(self):
-        socketio.run(app, port=5000, debug=False, use_reloader=False)
+        socketio.run(app, host='0.0.0.0', port=5000, debug=False, use_reloader=False)
 
     def start(self):
         self.thread = socketio.start_background_task(self.start_server)
@@ -177,40 +177,33 @@ def main():
         cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_GUI_NORMAL)
         cv2.resizeWindow(WINDOW_NAME, 1280, 720)
         cv2.moveWindow(WINDOW_NAME, 0, 0)
-        cvui.init(WINDOW_NAME)
-        
-        uiframe = np.zeros((720, 1280, 3), np.uint8)
+
+        uiframe = np.zeros((720, 1280, 3), np.uint8)      
+        uiframe[:] = (50, 50, 50)  
+
         preview = np.zeros((480, 1280, 3), np.uint8)
 
         while(running == True):
-            uiframe[:] = (255, 50, 50)
-            cvui.beginRow(uiframe, 0, 0, 1280, 720, 0)
-            cvui.beginColumn(1280, 720, 0)
-            #row 1
-            cvui.text('Connnect to http://{0}:5000/'.format( hostip))
-
+           
             #TODO: need better way to keep streams updated / monitor when the process crashes/exits
             for stream in streams:
                 if( not stream.is_alive()):
                     streams.remove(stream)
+                    preview[:] = (0,0,0)
+                    uiframe[:] = (50, 50, 50)  
 
 
             #row 2
             if len(streams) > 0:
-                cvui.printf(  "framecount = %.0f", streams[0].framecount)
+                uiframe[:] = (50, 200, 50)  
                 newpreview = streams[0].LastPreview()
                 if( newpreview is not None ):
                     preview = newpreview
-                    
-            cvui.image( preview)
+                
+            uiframe[200:680, 0:1280] = preview
 
-            #row 3
-            if cvui.button('&Shutdown'):
-                break
-
-            cvui.endColumn()
-            cvui.endRow()
-            cvui.update()
+            # Using cv2.putText() method 
+            uiframe = cv2.putText(uiframe, 'http://{0}:5000/'.format( hostip), (50,100), cv2.FONT_HERSHEY_SIMPLEX, 2.5, (255, 255, 255) , 4, cv2.LINE_AA)
 
             cv2.imshow(WINDOW_NAME, uiframe) 
             
@@ -218,7 +211,7 @@ def main():
             if cv2.waitKey(1) == 27:
                 running = False
 
-            socketio.sleep(0.01)
+            socketio.sleep(0.1)
 
     finally:
         print('shutting down')  
