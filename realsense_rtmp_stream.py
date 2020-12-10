@@ -38,7 +38,7 @@ class XQueue(mpq.Queue):
 
 class RealsenseCapture (mp.Process):
 
-    def __init__(self, rtmp_uri, config_json, w, h):
+    def __init__(self, rtmp_uri, config_json, w, h, previewQueue, statusQueue):
         mp.Process.__init__(self)
 
         self.exit = mp.Event()
@@ -46,11 +46,8 @@ class RealsenseCapture (mp.Process):
         self.json_file = config_json
         self.width = w
         self.height = h
-
-        #queue of images
-        self.previewQueue = SimpleQueue()
-        #queue of status messages
-        self.statusQueue = SimpleQueue()
+        self.previewQueue = previewQueue
+        self.statusQueue = statusQueue
         self.gstpipe = None
         self.rspipeline = None
         self.framecount = 0
@@ -128,34 +125,6 @@ class RealsenseCapture (mp.Process):
             self.shutdown()
             #sys.stderr.write('Error: %s: %s\n' % (err, debug))       
         return True
-
-
-    def Status(self):
-        result = None
-        if( not self.exit.is_set() ):
-            try:
-                if( not self.statusQueue.empty() ):
-                    result = self.statusQueue.get()
-            except queue.Empty:
-                pass
-
-        return result
-
-    def LastPreview(self):
-        result = None
-
-        if( not self.exit.is_set() ):
-            try:
-                while( not self.previewQueue.empty() ):
-                    result = self.previewQueue.get()
-            except queue.Empty:
-                pass
-
-        return result
-
-        #while( not self.previewQueue.empty() ):
-            #result = self.previewQueue.get()
-            #self.previewQueue.task_done()
 
     def run(self):
         # ========================

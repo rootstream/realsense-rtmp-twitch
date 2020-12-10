@@ -15,6 +15,8 @@ from threading import Thread
 
 import multiprocessing
 from multiprocessing import Process, Queue
+import multiprocessing.queues as mpq
+from multiprocessing import Process, SimpleQueue
 
 import flask
 from flask import Flask, Response, render_template, send_from_directory
@@ -34,6 +36,12 @@ running = False
 streaming = False
 
 hostip = ""
+
+#queue of images
+previewQueue = None
+#queue of status messages
+statusQueue = None
+
 
 app = Flask(__name__, 
     static_folder='web', 
@@ -70,10 +78,11 @@ def handle_start(url):
         dir_path = os.path.dirname(os.path.realpath(__file__))
         json_file = dir_path + "/" + "MidResHighDensityPreset.json" # MidResHighDensityPreset.json / custom / MidResHighAccuracyPreset
 
-        stream = RealsenseCapture( url, json_file, 640, 480 )
+        stream = RealsenseCapture( url, json_file, 640, 480, previewQueue,statusQueue )
         streaming = True        
         stream.start()
         streams.append(stream)
+
 
 @socketio.on('stop')
 def handle_stop():
@@ -135,13 +144,36 @@ class WebSocketServer(object):
         while (running==True):        
             if( len(streams)>0):
                 try:
-                    status = streams[0].Status()
+                    status = Status()
                     while( status is not None ):
                         print('status: %s' % (status) )
-                        status = streams[0].Status()
+                        status = Status()
                         socketio.emit("status", status)
                 except:
                     pass     
+
+
+def Status():
+    result = None
+    try:
+        if( not statusQueue.empty() ):
+            result = statusQueue.get()
+    except queue.Empty:
+        pass
+
+    return result
+
+def LastPreview():
+    result = None
+
+    try:
+        while( not previewQueue.empty() ):
+            result = previewQueue.get()
+    except queue.Empty:
+        pass
+
+    return result
+
 
 def main():
     
@@ -149,6 +181,15 @@ def main():
     global streaming
     global running
     
+    global previewQueue
+    global statusQueue
+
+    #queue of images
+    previewQueue = SimpleQueue()
+    #queue of status messages
+    statusQueue = SimpleQueue()
+
+
     try:
         log = ''
         print( "Default gateway: ", netifaces.gateways()['default'])
@@ -212,7 +253,7 @@ def main():
                     if len(streams) > 0:                                            
                         #recording / red
                         uiframe[:] = (50, 50, 175) 
-                        newpreview = streams[0].LastPreview()
+                        newpreview = LastPreview()
                         if( newpreview is not None ):
                             preview = newpreview
                     else:
