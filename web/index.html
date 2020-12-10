@@ -34,11 +34,15 @@
       function stop(){
         socket.emit('stop');
       }
+      function shutdown(){
+        socket.emit('shutdown');
+      }
     </script>
 
-    <input id="stream_url"></input>
+    <input id="stream_url" value="rtmp://192.168.1.161:1935/live/test"></input>
     <button onClick="start()">Start</button>
     <button onClick="stop()">Stop</button>
+    <button onClick="shutdown()">Shutdown</button>
 
 </body>
 </html>

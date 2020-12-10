@@ -10,8 +10,9 @@ import sys
 import platform
 import asyncio
 
-import multiprocessing
-from multiprocessing import Process
+import multiprocessing.queues as mpq
+from multiprocessing import Process, SimpleQueue
+import multiprocessing as mp
 
 from flask import Flask, Response, render_template, send_from_directory
 from flask_socketio import SocketIO, emit
@@ -20,17 +21,41 @@ import gi
 gi.require_version('Gst', '1.0')
 from gi.repository import GObject, Gst
 
-class RealsenseCapture (multiprocessing.Process):
+#workaround for running this on macos
+#https://stackoverflow.com/a/24941654
+#https://stackoverflow.com/q/39496554
+class XQueue(mpq.Queue):
+
+    def __init__(self,*args,**kwargs):
+        ctx = mp.get_context()
+        super(XQueue, self).__init__(*args, **kwargs, ctx=ctx)
+
+    def empty(self):
+        try:
+            return self.qsize() == 0
+        except NotImplementedError:  # OS X -- see qsize() implementation
+            return super(XQueue, self).empty()
+
+class RealsenseCapture (mp.Process):
 
     def __init__(self, rtmp_uri, config_json, w, h):
-        multiprocessing.Process.__init__(self)
-        print ("Starting Realsense Capture")
+        mp.Process.__init__(self)
 
-        self.exit = multiprocessing.Event()
+        self.exit = mp.Event()
         self.rtmp_url = rtmp_uri
         self.json_file = config_json
         self.width = w
         self.height = h
+
+        #queue of images
+        self.previewQueue = SimpleQueue()
+        #queue of status messages
+        self.statusQueue = SimpleQueue()
+        self.gstpipe = None
+        self.rspipeline = None
+        self.framecount = 0
+
+        print ("Initialized Realsense Capture")
 
     def shutdown(self):
         print ("Shutdown Realsense Capture")
@@ -80,18 +105,37 @@ class RealsenseCapture (multiprocessing.Process):
         elif t == Gst.MessageType.WARNING:
             err, debug = message.parse_warning()
             print('Warning: %s: %s\n' % (err, debug))
+            self.statusQueue.put('Warning: %s: %s\n' % (err, debug) )
             #sys.stderr.write('Warning: %s: %s\n' % (err, debug))
         elif t == Gst.MessageType.ERROR:
             err, debug = message.parse_error()
             print('Error: %s: %s\n' % (err, debug))
+            self.statusQueue.put('Error: %s: %s\n' % (err, debug) )
+            self.shutdown()
             #sys.stderr.write('Error: %s: %s\n' % (err, debug))       
         return True
+
+    def LastPreview(self):
+        result = None
+
+        if( not self.exit.is_set() ):
+            try:
+                while( not self.previewQueue.empty() ):
+                    result = self.previewQueue.get()
+            except queue.Empty:
+                pass
+
+        return result
+
+        #while( not self.previewQueue.empty() ):
+            #result = self.previewQueue.get()
+            #self.previewQueue.task_done()
 
     def run(self):
         # ========================
         # 1. Configure all streams
         # ========================
-        pipeline = rs.pipeline()
+        self.rspipeline = rs.pipeline()
         config = rs.config()
         config.enable_stream(rs.stream.depth, self.width, self.height, rs.format.z16, 30)
         config.enable_stream(rs.stream.color, self.width, self.height, rs.format.bgr8, 30)
@@ -101,7 +145,7 @@ class RealsenseCapture (multiprocessing.Process):
         # ======================
         print("Starting up the Intel Realsense...")
         print("")
-        profile = pipeline.start(config)
+        profile = self.rspipeline.start(config)
 
         # Load the configuration here
         self.loadConfiguration(profile, self.json_file)
@@ -126,10 +170,10 @@ class RealsenseCapture (multiprocessing.Process):
             # 5. Skip the first 30 frames.
             # This gives the Auto-Exposure time to adjust
             # ===========================================
-            for x in range(50):
-                frames = pipeline.wait_for_frames()
-                # Align the depth frame to color frame
-                aligned_frames = align.process(frames)
+            #for x in range(30):
+            #    frames = self.rspipeline.wait_for_frames()
+            #    # Align the depth frame to color frame
+            #    aligned_frames = align.process(frames)
 
             print("Intel Realsense started successfully.")
             print("")
@@ -169,23 +213,23 @@ class RealsenseCapture (multiprocessing.Process):
             #TODO: windows
 
             print( CLI )
-            pipe=Gst.parse_launch(CLI)
+            self.gstpipe=Gst.parse_launch(CLI)
 
-            appsrc=pipe.get_by_name("mysource")
+            appsrc=self.gstpipe.get_by_name("mysource")
             appsrc.set_property('emit-signals',True) #tell sink to emit signals
 
             # Set up a pipeline bus watch to catch errors.
-            bus = pipe.get_bus()
+            bus = self.gstpipe.get_bus()
             bus.connect("message", self.on_bus_message)
 
-            pipe.set_state(Gst.State.PLAYING)
+            self.gstpipe.set_state(Gst.State.PLAYING)
             intrinsics = True
             
             while not self.exit.is_set():
                 # ======================================
                 # 7. Wait for a coherent pair of frames:
                 # ======================================
-                frames = pipeline.wait_for_frames()
+                frames = self.rspipeline.wait_for_frames(1000)
 
                 # =======================================
                 # 8. Align the depth frame to color frame
@@ -279,22 +323,21 @@ class RealsenseCapture (multiprocessing.Process):
 
                 #preview side by side because of landscape orientation of the pi
                 preview = np.hstack((color_image, hsv8))
-                cv2.namedWindow('RGB and Depth Map Images')
-                #preview = cv2.resize(images, (self.width, self.height*2), interpolation = cv2.INTER_AREA)
-                cv2.imshow('RGB and Depth Map Images', preview)
-                c = cv2.waitKey(1)
 
-                # =============================================
-                # If the esc key is pressed exit
-                # =============================================
-                if c == 27:  # esc to exit
-                    break
+                #if we don't check for exit here the shutdown process hangs here
+                if(not self.exit.is_set()):
+                    self.previewQueue.put(preview)
+
         except:        
             e = sys.exc_info()[0]
             print( "Unexpected Error: %s" % e )
+            print( sys.exc_info())
+
         finally:
             # Stop streaming
-            pipeline.stop()
-            pipe.set_state(Gst.State.PAUSED)
+            print( "Stop realsense pipeline" )
+            self.rspipeline.stop()
+            print( "Pause gstreamer pipe" )
+            self.gstpipe.set_state(Gst.State.PAUSED)
         
         print ("Exiting capture loop")
