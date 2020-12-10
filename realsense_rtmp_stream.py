@@ -98,22 +98,48 @@ class RealsenseCapture (mp.Process):
         return depth_frame
 
     def on_bus_message(self, message):
-        print("on_bus_message")
         t = message.type
+        
+        #print('{} {}: {}'.format(
+        #        Gst.MessageType.get_name(message.type), message.src.name,
+        #        message.get_structure().to_string()))
+
         if t == Gst.MessageType.EOS:
             print("Eos")
+            self.statusQueue.put('WARNING: End of Stream')
+
+        elif t == Gst.MessageType.INFO:
+            self.statusQueue.put('INFO: %s, %s' % (msg.src.name, msg.get_structure().to_string()))
+
+        elif t == Gst.MessageType.STATE_CHANGED:
+            old_state, new_state, pending_state = message.parse_state_changed()
+            #print("Pipeline state changed from %s to %s." %  (old_state.value_nick, new_state.value_nick))
+            self.statusQueue.put("STREAM_STATE_CHANGED: %s, %s, %s" % (message.src.name, old_state.value_nick, new_state.value_nick))
+
         elif t == Gst.MessageType.WARNING:
             err, debug = message.parse_warning()
             print('Warning: %s: %s\n' % (err, debug))
-            self.statusQueue.put('Warning: %s: %s\n' % (err, debug) )
+            self.statusQueue.put('WARNING: %s, %s' % (err, debug) )
             #sys.stderr.write('Warning: %s: %s\n' % (err, debug))
         elif t == Gst.MessageType.ERROR:
             err, debug = message.parse_error()
             print('Error: %s: %s\n' % (err, debug))
-            self.statusQueue.put('Error: %s: %s\n' % (err, debug) )
+            self.statusQueue.put('ERROR: %s, %s' % (err, debug) )
             self.shutdown()
             #sys.stderr.write('Error: %s: %s\n' % (err, debug))       
         return True
+
+
+    def Status(self):
+        result = None
+        if( not self.exit.is_set() ):
+            try:
+                if( not self.statusQueue.empty() ):
+                    result = self.statusQueue.get()
+            except queue.Empty:
+                pass
+
+        return result
 
     def LastPreview(self):
         result = None
@@ -312,13 +338,13 @@ class RealsenseCapture (mp.Process):
 
                 #process any messages from gstreamer
                 msg = bus.pop_filtered(
-                    Gst.MessageType.ERROR | Gst.MessageType.EOS
+                    Gst.MessageType.ERROR | Gst.MessageType.EOS | Gst.MessageType.INFO | Gst.MessageType.STATE_CHANGED
                 )
                 #empty the message queue if there is one
                 while( msg ): 
                     self.on_bus_message(msg)
                     msg = bus.pop_filtered(
-                        Gst.MessageType.ERROR | Gst.MessageType.EOS
+                        Gst.MessageType.ERROR | Gst.MessageType.EOS | Gst.MessageType.INFO | Gst.MessageType.STATE_CHANGED
                     )
 
                 #preview side by side because of landscape orientation of the pi

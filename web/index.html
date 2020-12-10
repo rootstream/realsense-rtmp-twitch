@@ -2,6 +2,24 @@
 <html>
 <head>
 <title>Volumetric Performance Toolbox</title>
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style>
+    body {
+      font-family: Helvetica, sans-serif;
+    }
+    button{
+      font-family: Helvetica, sans-serif;
+      height:20px;
+      width:80px;
+    }
+    .row {
+        padding: 10px 10px 20px 10px;
+        width:100%
+    }
+
+</style>
 </head>
 <body>
 
@@ -24,9 +42,16 @@
         console.log(data);
       });
 
-      function sendMsg(){
-        console.log( socket.send('Hello!') );
-      }
+      socket.on('status', data => {
+        console.log('status');
+        console.log(data);
+
+        var textarea = document.getElementById("status");         
+        textarea.value += data +'\r\n';
+        textarea.scrollTop = textarea.scrollHeight;
+
+      });
+  
       function start(){
         console.log( document.getElementById("stream_url").value);
         socket.emit('start', document.getElementById("stream_url").value);
@@ -37,12 +62,32 @@
       function shutdown(){
         socket.emit('shutdown');
       }
+
+      function update(){
+        socket.emit('update');
+      }
     </script>
 
-    <input id="stream_url" value="rtmp://192.168.1.161:1935/live/test"></input>
-    <button onClick="start()">Start</button>
-    <button onClick="stop()">Stop</button>
-    <button onClick="shutdown()">Shutdown</button>
+  <div id="parent">
+    <div class="row">
+        <div >Streaming Endpoint:</div>
+        <input name="stream_url" id="stream_url" value="rtmp://" style="width:80%" />       
+    </div>
+    <div class="row">
+          <button onClick="start()">Start</button>
+          <div style="display:inline-block;width:30px"></div>
+          <button onClick="stop()">Stop</button>
+      </div>  
 
+    <div class="row">  
+      <textarea id="status" style="width:80%;height:250px"></textarea>
+    </div>
+
+    <div class="row">
+      <button onClick="shutdown()">Shutdown</button>
+      <div style="display:inline-block;width:30px"></div>      
+      <button onClick="update()">Update</button>
+    </div>
+  </div>
 </body>
 </html>

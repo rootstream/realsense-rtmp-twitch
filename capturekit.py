@@ -9,7 +9,6 @@ import time
 import platform
 import asyncio
 import netifaces
-import cvui
 import requests
 
 from threading import Thread
@@ -126,11 +125,23 @@ class WebSocketServer(object):
 
     def start(self):
         self.thread = socketio.start_background_task(self.start_server)
-
-    def send_msg(self, type, data):
-        socketio.emit(type, json.dumps(data),namespace="/")
-
-
+       	socketio.start_background_task(self.send_status)
+    
+    def send_status(self):
+        
+        global streams
+        global running        
+        
+        while (running==True):        
+            if( len(streams)>0):
+                try:
+                    status = streams[0].Status()
+                    while( status is not None ):
+                        print('status: %s' % (status) )
+                        status = streams[0].Status()
+                        socketio.emit("status", status)
+                except:
+                    pass     
 
 def main():
     
@@ -183,29 +194,32 @@ def main():
 
         preview = np.zeros((480, 1280, 3), np.uint8)
 
-        server = WebSocketServer()
-        
         if( running ):
+            server = WebSocketServer()
             server.start()
             while(running == True):
             
-                #TODO: need better way to keep streams updated / monitor when the process crashes/exits
-                for stream in streams:
-                    if( not stream.is_alive()):
-                        streams.remove(stream)
+                try:
+                    #TODO: need better way to keep streams updated / monitor when the process crashes/exits
+                    #TODO: need thread locking around streams because another thread migh have broken it
+
+                    for stream in streams:
+                        if( not stream.is_alive()):
+                            streams.remove(stream)
+                            preview[:] = (0,0,0)
+                            uiframe[:] = (50, 50, 50)  
+
+                    if len(streams) > 0:                                            
+                        #recording / red
+                        uiframe[:] = (50, 50, 175) 
+                        newpreview = streams[0].LastPreview()
+                        if( newpreview is not None ):
+                            preview = newpreview
+                    else:
                         preview[:] = (0,0,0)
                         uiframe[:] = (50, 50, 50)  
-
-                #row 2
-                if len(streams) > 0:
-                    #recording / red
-                    uiframe[:] = (50, 50, 175)  
-                    newpreview = streams[0].LastPreview()
-                    if( newpreview is not None ):
-                        preview = newpreview
-                else:
-                    preview[:] = (0,0,0)
-                    uiframe[:] = (50, 50, 50)  
+                except:
+                    pass
     
                 y = 120
                 uiframe[y:y+480, 0:1280] = preview
