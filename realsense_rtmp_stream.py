@@ -331,13 +331,19 @@ class RealsenseCapture (mp.Process):
         except:        
             e = sys.exc_info()[0]
             print( "Unexpected Error: %s" % e )
-            self.statusQueue.put("Unexpected Error: %s" % e)
+            self.statusQueue.put("ERROR: Unexpected Error: %s" % e)
 
         finally:
             # Stop streaming
             print( "Stop realsense pipeline" )
             self.rspipeline.stop()
             print( "Pause gstreamer pipe" )
-            self.gstpipe.set_state(Gst.State.PAUSED)
+            try:
+                if( (self.gstpipe.get_state()[1] is not Gst.State.PAUSED )
+                    self.gstpipe.set_state(Gst.State.PAUSED)
+            except:
+                self.statusQueue.put("ERROR: Error pausing gstreamer")
+                print ("Error pausing gstreamer")        
         
+        self.statusQueue.put("INFO: Exiting Realsense Capture process")
         print ("Exiting capture loop")
