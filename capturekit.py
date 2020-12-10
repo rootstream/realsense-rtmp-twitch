@@ -26,8 +26,6 @@ from colorama import Fore, Back, Style
 from colorama import init
 init()
 
-import eventlet
-
 import gi
 gi.require_version('Gst', '1.0')
 from gi.repository import GObject, Gst
