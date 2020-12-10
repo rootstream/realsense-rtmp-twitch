@@ -339,7 +339,7 @@ class RealsenseCapture (mp.Process):
             self.rspipeline.stop()
             print( "Pause gstreamer pipe" )
             try:
-                if( (self.gstpipe.get_state()[1] is not Gst.State.PAUSED )
+                if( self.gstpipe.get_state()[1] is not Gst.State.PAUSED ):
                     self.gstpipe.set_state(Gst.State.PAUSED)
             except:
                 self.statusQueue.put("ERROR: Error pausing gstreamer")
