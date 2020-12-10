@@ -150,8 +150,8 @@ class WebSocketServer(object):
                         status = Status()
                         socketio.emit("status", status)
                 except:
-                    pass     
-
+                    pass   
+            socketio.sleep(0.1)
 
 def Status():
     result = None
@@ -274,7 +274,7 @@ def main():
                 if cv2.waitKey(1) == 27:
                     running = False
 
-                socketio.sleep(0.001)
+                socketio.sleep(0.1)
 
         else:
                 uiframe[:] = (0, 165, 255)  
