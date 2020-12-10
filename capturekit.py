@@ -39,6 +39,8 @@ hostip = ""
 app = Flask(__name__, 
     static_folder='web', 
     static_url_path='')
+
+#TODO: threading is not ideas but it's the only one we can get to work with multiprocessing without reverting to needing proper message queue like rabbitmq    
 socketio = SocketIO(app, async_mode="threading")
 
 Gst.init(None)
@@ -125,14 +127,10 @@ class WebSocketServer(object):
     def start(self):
         self.thread = socketio.start_background_task(self.start_server)
 
-    def stop(self):
-        socketio.stop()
-
     def send_msg(self, type, data):
         socketio.emit(type, json.dumps(data),namespace="/")
 
-    def wait(self):
-        self.thread.join()
+
 
 def main():
     
@@ -141,16 +139,7 @@ def main():
     global running
     
     try:
-
-        ctx = rs.context()
-        if len(ctx.devices) > 0:
-            for d in ctx.devices:
-                print ('Found device: ',
-                    d.get_info(rs.camera_info.name), ' ',
-                    d.get_info(rs.camera_info.serial_number))
-        else:
-            print(Fore.RED + "No Realsense devices connected" + Fore.RESET)
-
+        log = ''
         print( "Default gateway: ", netifaces.gateways()['default'])
         print( "Internet interface", netifaces.gateways()['default'][netifaces.AF_INET])
 
@@ -160,17 +149,28 @@ def main():
                 if( len(netifaces.ifaddresses(iface)[netifaces.AF_INET] )):
                     hostip = netifaces.ifaddresses(iface)[netifaces.AF_INET][0]['addr']
                     print(Fore.YELLOW + "Found Host IP" , hostip , Fore.RESET)
+                    running = True
                 else:
+                    log += "No internet connected address \r\n"            
                     print(Fore.RED + "No internet connected address [AF_INET]"+ Fore.RESET)
             else:
-                print(Fore.RED + "No internet connected gatate"+ Fore.RESET)
+                log += "No internet connected gateway \r\n"            
+                print(Fore.RED + "No internet connected gateway"+ Fore.RESET)
         else:
+            log += "No default gateway \r\n"            
             print(Fore.RED + "No default gateway"+ Fore.RESET)
 
-        server = WebSocketServer()
-        server.start()
 
-        running = True
+        ctx = rs.context()
+        if len(ctx.devices) > 0:
+            for d in ctx.devices:
+                print ('Found device: ',
+                    d.get_info(rs.camera_info.name), ' ',
+                    d.get_info(rs.camera_info.serial_number))
+        else:
+            log = "No Realsense devices detected"            
+            print(Fore.RED + log  + Fore.RESET)
+            running = False
 
         WINDOW_NAME	= 'VPT Kit'
 
@@ -183,40 +183,54 @@ def main():
 
         preview = np.zeros((480, 1280, 3), np.uint8)
 
-        while(running == True):
-           
-            #TODO: need better way to keep streams updated / monitor when the process crashes/exits
-            for stream in streams:
-                if( not stream.is_alive()):
-                    streams.remove(stream)
+        server = WebSocketServer()
+        
+        if( running ):
+            server.start()
+            while(running == True):
+            
+                #TODO: need better way to keep streams updated / monitor when the process crashes/exits
+                for stream in streams:
+                    if( not stream.is_alive()):
+                        streams.remove(stream)
+                        preview[:] = (0,0,0)
+                        uiframe[:] = (50, 50, 50)  
+
+                #row 2
+                if len(streams) > 0:
+                    #recording / red
+                    uiframe[:] = (50, 50, 175)  
+                    newpreview = streams[0].LastPreview()
+                    if( newpreview is not None ):
+                        preview = newpreview
+                else:
                     preview[:] = (0,0,0)
                     uiframe[:] = (50, 50, 50)  
+    
+                y = 120
+                uiframe[y:y+480, 0:1280] = preview
 
+                # Using cv2.putText() method 
+                uiframe = cv2.putText(uiframe, 'http://{0}:5000/'.format( hostip), (50,100), cv2.FONT_HERSHEY_SIMPLEX, 2.5, (255, 255, 255) , 4, cv2.LINE_AA)
 
-            #row 2
-            if len(streams) > 0:
-                uiframe[:] = (50, 200, 50)  
-                newpreview = streams[0].LastPreview()
-                if( newpreview is not None ):
-                    preview = newpreview
-            else:
-                preview[:] = (0,0,0)
-                uiframe[:] = (50, 50, 50)  
- 
-            y = 150
-            uiframe[y:y+480, 0:1280] = preview
+                cv2.imshow(WINDOW_NAME, uiframe) 
+                
+                # Check if ESC key was pressed
+                if cv2.waitKey(1) == 27:
+                    running = False
 
-            # Using cv2.putText() method 
-            uiframe = cv2.putText(uiframe, 'http://{0}:5000/'.format( hostip), (50,100), cv2.FONT_HERSHEY_SIMPLEX, 2.5, (255, 255, 255) , 4, cv2.LINE_AA)
+                socketio.sleep(0.001)
 
-            cv2.imshow(WINDOW_NAME, uiframe) 
-            
-            # Check if ESC key was pressed
-            if cv2.waitKey(1) == 27:
-                running = False
+        else:
+                uiframe[:] = (0, 165, 255)  
+                uiframe = cv2.putText(uiframe, log, (50,100), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 0, 0) , 4, cv2.LINE_AA)
 
-            socketio.sleep(0.001)
-
+                running = True
+                while(running == True):
+                    cv2.imshow(WINDOW_NAME, uiframe) 
+                    # Check if ESC key was pressed
+                    if cv2.waitKey(1) == 27:
+                        running = False
     finally:
         print('shutting down')  
 
@@ -229,6 +243,7 @@ def main():
             shutdown_server = requests.get("http://localhost:5000/shutdown", data=None)
         except:
             pass
+
 
 if __name__ == '__main__':
     multiprocessing.set_start_method('spawn')
