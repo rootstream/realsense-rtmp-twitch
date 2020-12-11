@@ -14,5 +14,6 @@ else
         echo "Network connection found"
 fi
 echo "......................................................."
-echo ""
-systemctl start flask.service
+echo "Start Capture Kit"
+#systemctl start flask.service
+/home/pi/Documents/raspberry-capture-kit/launchflask.sh
