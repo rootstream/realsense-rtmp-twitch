@@ -1,4 +1,9 @@
 #!python3
+try:
+	import pyrealsense2.pyrealsense2 as rs
+except ModuleNotFoundError:
+	print('Use local realsense lib')
+	import pyrealsense2 as rs
 
 import pyrealsense2 as rs
 import numpy as np
