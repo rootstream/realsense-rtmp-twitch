@@ -5,7 +5,6 @@ except ModuleNotFoundError:
 	print('Use local realsense lib')
 	import pyrealsense2 as rs
 
-import pyrealsense2 as rs
 import numpy as np
 import cv2
 import os
@@ -55,7 +54,16 @@ app = Flask(__name__,
 #TODO: threading is not ideas but it's the only one we can get to work with multiprocessing without reverting to needing proper message queue like rabbitmq    
 socketio = SocketIO(app, async_mode="threading")
 
+current_dir = os.path.dirname(os.path.realpath(__file__))
+os.environ["GST_DEBUG_DUMP_DOT_DIR"] = current_dir
+os.putenv('GST_DEBUG_DUMP_DIR_DIR', current_dir)
+os.putenv('GST_DEBUG_NO_COLOR', "1")
+os.putenv('GST_DEBUG_FILE', current_dir + '/debug.log')
+os.putenv('GST_DEBUG', '2,*error*:4')
+
 Gst.init(None)
+#Gst.debug_set_active(True)
+#Gst.debug_set_default_threshold(4)
 
 @socketio.on('message')
 def handle_message(message):

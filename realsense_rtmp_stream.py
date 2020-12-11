@@ -1,6 +1,9 @@
 #!python3
+try:
+	import pyrealsense2.pyrealsense2 as rs
+except ModuleNotFoundError:
+	import pyrealsense2 as rs
 
-import pyrealsense2 as rs
 import numpy as np
 import cv2
 import os
@@ -97,9 +100,9 @@ class RealsenseCapture (mp.Process):
     def on_bus_message(self, message):
         t = message.type
         
-        #print('{} {}: {}'.format(
-        #        Gst.MessageType.get_name(message.type), message.src.name,
-        #        message.get_structure().to_string()))
+        print('{} {}: {}'.format(
+                Gst.MessageType.get_name(message.type), message.src.name,
+                message.get_structure().to_string()))
 
         if t == Gst.MessageType.EOS:
             print("Eos")
@@ -224,24 +227,19 @@ class RealsenseCapture (mp.Process):
                 # ======================================
                 # 7. Wait for a coherent pair of frames:
                 # ======================================
-                try:
-                    frames = self.rspipeline.wait_for_frames(1000)
+                frames = self.rspipeline.wait_for_frames(1000)
 
-                    # =======================================
-                    # 8. Align the depth frame to color frame
-                    # =======================================
-                    aligned_frames = align.process(frames)
+                # =======================================
+                # 8. Align the depth frame to color frame
+                # =======================================
+                aligned_frames = align.process(frames)
 
-                    # ================================================
-                    # 9. Fetch the depth and colour frames from stream
-                    # ================================================
-                    depth_frame = aligned_frames.get_depth_frame()
-                    color_frame = aligned_frames.get_color_frame()
-                    if not depth_frame or not color_frame:
-                        pass
-                
-                except:
-                    self.statusQueue("Exception getting realsense frames")
+                # ================================================
+                # 9. Fetch the depth and colour frames from stream
+                # ================================================
+                depth_frame = aligned_frames.get_depth_frame()
+                color_frame = aligned_frames.get_color_frame()
+                if not depth_frame or not color_frame:
                     pass
 
                 # print the camera intrinsics just once. it is always the same
@@ -312,13 +310,13 @@ class RealsenseCapture (mp.Process):
 
                 #process any messages from gstreamer
                 msg = bus.pop_filtered(
-                    Gst.MessageType.ERROR | Gst.MessageType.EOS | Gst.MessageType.INFO | Gst.MessageType.STATE_CHANGED
+                    Gst.MessageType.ERROR | Gst.MessageType.WARNING | Gst.MessageType.EOS | Gst.MessageType.INFO | Gst.MessageType.STATE_CHANGED
                 )
                 #empty the message queue if there is one
                 while( msg ): 
                     self.on_bus_message(msg)
                     msg = bus.pop_filtered(
-                        Gst.MessageType.ERROR | Gst.MessageType.EOS | Gst.MessageType.INFO | Gst.MessageType.STATE_CHANGED
+                        Gst.MessageType.ERROR | Gst.MessageType.WARNING | Gst.MessageType.EOS | Gst.MessageType.INFO | Gst.MessageType.STATE_CHANGED
                     )
 
                 #preview side by side because of landscape orientation of the pi
