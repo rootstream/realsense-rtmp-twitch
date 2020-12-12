@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Volumetric Performance Toolbox</title>
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style>
+    body {
+      font-family: Helvetica, sans-serif;
+    }
+    button{
+      font-family: Helvetica, sans-serif;
+      height:20px;
+      width:80px;
+    }
+    .row {
+        padding: 10px 10px 20px 10px;
+        width:100%
+    }
+
+</style>
+</head>
+<body>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dat-gui/0.7.6/dat.gui.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/2.3.1/socket.io.min.js"></script>
+
+    <script>
+      const socket = io();
+
+      socket.on('disconnect', () => {
+        console.log('disconnect');
+      });
+
+      socket.on('connect', () => {
+        console.log('connect');
+      });
+
+      socket.on('message', data => {
+        console.log('message');
+        console.log(data);
+      });
+
+      socket.on('status', data => {
+        console.log('status');
+        console.log(data);
+
+        var textarea = document.getElementById("status");         
+        textarea.value += data +'\r\n';
+        textarea.scrollTop = textarea.scrollHeight;
+
+      });
+  
+      function start(){
+        console.log( document.getElementById("stream_url").value);
+        socket.emit('start', document.getElementById("stream_url").value);
+      }
+      function stop(){
+        socket.emit('stop');
+      }
+      function reboot(){
+        socket.emit('reboot');
+      }
+
+      function update(){
+        socket.emit('update');
+      }
+    </script>
+
+  <div id="parent">
+    <div class="row">
+        <div >Streaming Endpoint:</div>
+        <input name="stream_url" id="stream_url" value="rtmp://" style="width:80%" />       
+    </div>
+    <div class="row">
+          <button onClick="start()">Start</button>
+          <div style="display:inline-block;width:30px"></div>
+          <button onClick="stop()">Stop</button>
+      </div>  
+
+    <div class="row">  
+      <textarea id="status" style="width:80%;height:250px"></textarea>
+    </div>
+
+    <div class="row">
+      <button onClick="reboot()">Restart</button>
+      <div style="display:inline-block;width:30px"></div>      
+      <!-- <button onClick="update()">Update</button> -->
+    </div>
+  </div>
+</body>
+</html>

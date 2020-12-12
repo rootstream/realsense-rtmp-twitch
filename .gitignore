@@ -4,3 +4,15 @@ captured_images
 .DS_Store
 
 .key
+
+*.log
+
+*.flv
+
+*.mp4
+
+*.wav
+
+__pycache__/
+
+.vscode/
